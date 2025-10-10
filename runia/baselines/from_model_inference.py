@@ -17,7 +17,7 @@ from typing import Tuple, Union
 from torch import Tensor
 import numpy as np
 from sklearn.covariance import EmpiricalCovariance
-from runia.uncertainty_estimation.feature_extraction.utils import Hook
+from runia.feature_extraction.utils import Hook
 
 __all__ = [
     "get_mcd_pred_uncertainty_score",

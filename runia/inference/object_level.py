@@ -12,19 +12,16 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from runia.uncertainty_estimation.inference.abstract_classes import (
+from runia.inference.abstract_classes import (
     InferenceModule,
     record_time,
     ObjectDetectionInference,
 )
-from runia.uncertainty_estimation.feature_extraction.object_level import (
-    _reduce_features_to_rois,
-    BoxFeaturesExtractor,
-)
-from runia.uncertainty_estimation.feature_extraction.utils import Hook
+import runia.feature_extraction.object_level
+from runia.feature_extraction.utils import Hook
 from runia.dimensionality_reduction import apply_pca_ds_split, apply_pca_transform
 from runia.import_helper_functions import module_exists
-from runia.uncertainty_estimation.inference.postprocessors import postprocessors_dict
+from runia.inference.postprocessors import postprocessors_dict
 
 if module_exists("ultralytics"):
     from ultralytics.engine.results import Boxes
@@ -139,14 +136,16 @@ class BoxInferenceYolo(InferenceModule):
 
             latent_rep = [layer.output for layer in layer_hook]  # latent representation sample
             # Get ROIs
-            latent_rep_means, latent_rep_stds = _reduce_features_to_rois(
-                latent_mcd_sample=latent_rep,
-                output_sizes=self.roi_output_sizes,
-                boxes=boxes,
-                img_shape=img_shape,
-                sampling_ratio=self.roi_sampling_ratio,
-                n_hooked_reps=len(self.roi_output_sizes),
-                n_detected_objects=n_detected_objects,
+            latent_rep_means, latent_rep_stds = (
+                runia.feature_extraction.object_level._reduce_features_to_rois(
+                    latent_mcd_sample=latent_rep,
+                    output_sizes=self.roi_output_sizes,
+                    boxes=boxes,
+                    img_shape=img_shape,
+                    sampling_ratio=self.roi_sampling_ratio,
+                    n_hooked_reps=len(self.roi_output_sizes),
+                    n_detected_objects=n_detected_objects,
+                )
             )
             latent_rep = torch.cat(latent_rep_means, dim=0)
             if use_stds:
@@ -345,7 +344,7 @@ class ObjectLevelInference(ObjectDetectionInference):
         self.postprocessor_input = postprocessor_input
 
         # Instantiate feature extractor, which has already implemented inference + extraction
-        self.features_extractor = BoxFeaturesExtractor(
+        self.features_extractor = runia.feature_extraction.object_level.BoxFeaturesExtractor(
             model=self.model,
             device=self.device,
             hooked_layers=self.hooked_layers,

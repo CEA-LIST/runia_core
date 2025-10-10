@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Unit tests for the uncertainty_estimation.inference module.
+Unit tests for the evaluation.inference module.
 
 This script provides comprehensive unit tests for the non-covered functions in the
-runia.uncertainty_estimation.inference module. It tests various classes
+runia.evaluation.inference module. It tests various classes
 and functions including abstract classes, postprocessors, and inference modules.
 
 Usage:
@@ -30,7 +30,7 @@ import numpy as np
 import torch
 from omegaconf import DictConfig
 
-from runia.uncertainty_estimation.inference.abstract_classes import (
+from runia.inference.abstract_classes import (
     InferenceModule,
     ObjectDetectionInference,
     OodPostprocessor,
@@ -38,7 +38,7 @@ from runia.uncertainty_estimation.inference.abstract_classes import (
     ProbabilisticInferenceModule,
     record_time,
 )
-from runia.uncertainty_estimation.feature_extraction.utils import Hook
+from runia.feature_extraction import Hook
 
 # Configure logging
 logging.basicConfig(

@@ -6,7 +6,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from torchvision.ops import nms
 
-from runia.uncertainty_estimation.feature_extraction.utils import (
+from runia.feature_extraction.utils import (
     Hook,
     get_mean_or_fullmean_ls_sample,
 )

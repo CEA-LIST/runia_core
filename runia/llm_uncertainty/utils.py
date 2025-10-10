@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 
 
-def are_equivalent(
+def _are_equivalent(
     model: PreTrainedModel, tokenizer: PreTrainedTokenizer, text1: str, text2: str
 ) -> bool:
     """
@@ -41,7 +41,7 @@ def are_equivalent(
     return (0 not in implications) and (implications != (1, 1))
 
 
-def semantic_clustering(
+def _semantic_clustering(
     model: PreTrainedModel, tokenizer: PreTrainedTokenizer, texts: List[str]
 ) -> Dict[int, List[int]]:
     """
@@ -71,7 +71,7 @@ def semantic_clustering(
             if j in clustered_indices:
                 continue
 
-            if are_equivalent(model, tokenizer, texts[i], texts[j]):
+            if _are_equivalent(model, tokenizer, texts[i], texts[j]):
                 current_cluster.append(j)
                 clustered_indices.add(j)
 
@@ -80,7 +80,7 @@ def semantic_clustering(
     return {idx: cluster for idx, cluster in enumerate(clusters)}
 
 
-def get_probability_distribution(logits: Tuple[torch.Tensor, ...]) -> torch.Tensor:
+def _get_probability_distribution(logits: Tuple[torch.Tensor, ...]) -> torch.Tensor:
     """
     Converts model logits into probability distributions for each generated token.
 
@@ -99,7 +99,7 @@ def get_probability_distribution(logits: Tuple[torch.Tensor, ...]) -> torch.Tens
     return torch.stack(probs, dim=0).cpu()
 
 
-def construct_embedding_matrix(
+def _construct_embedding_matrix(
     hidden_states: Tuple[torch.Tensor, ...], token_index: int = -1, layer_index: int = 15
 ) -> torch.Tensor:
     """

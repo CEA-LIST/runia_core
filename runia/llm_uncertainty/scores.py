@@ -18,14 +18,14 @@ from transformers import (
     AutoTokenizer,
 )
 from runia.llm_uncertainty.utils import (
-    semantic_clustering,
-    construct_embedding_matrix,
-    get_probability_distribution,
+    _semantic_clustering,
+    _construct_embedding_matrix,
+    _get_probability_distribution,
 )
 from runia.llm_uncertainty.attention_aggregation import (
-    get_recurent_attention,
-    get_average_attention_all,
-    get_attention_rollout,
+    _get_recurent_attention,
+    _get_average_attention_all,
+    _get_attention_rollout,
 )
 
 __all__ = [
@@ -56,7 +56,7 @@ def eigen_score(hidden_states: Tuple[torch.Tensor, ...], alpha: float = 1e-3) ->
     Returns:
         float: Mean of the logarithm of the singular values of the covariance matrix.
     """
-    embedding_matrix = construct_embedding_matrix(hidden_states)
+    embedding_matrix = _construct_embedding_matrix(hidden_states)
     cov_matrix = torch.cov(embedding_matrix.T).cpu().numpy().astype(float)
     _, s, _ = np.linalg.svd(cov_matrix + alpha * np.eye(cov_matrix.shape[0]))
     return float(np.mean(np.log(s)))
@@ -101,7 +101,7 @@ def semantic_entropy(
             - `discrete_semantic_entropy`: Entropy based on cluster size distribution.
             - `clusters`: Dictionary mapping cluster indices to lists of text indices.
     """
-    clusters = semantic_clustering(model, tokenizer, texts)
+    clusters = _semantic_clustering(model, tokenizer, texts)
 
     # Entropy based on cluster sizes
     total_samples = sum(len(indices) for indices in clusters.values())
@@ -139,7 +139,7 @@ def generation_entropy(logits: torch.FloatTensor) -> float:
     Returns:
         float: Average entropy entropy across all generated tokens.
     """
-    prob_dist = get_probability_distribution(logits)
+    prob_dist = _get_probability_distribution(logits)
     entropies = []
     for p in prob_dist:
         log_p = torch.clamp(p, min=1e-12).log()
@@ -180,8 +180,8 @@ def rauq_uncertainty(
               each alpha value in `alphas`.
     """
     aggregate_tokens = {
-        "original": get_recurent_attention,
-        "mean_all_tokens": get_average_attention_all,
+        "original": _get_recurent_attention,
+        "mean_all_tokens": _get_average_attention_all,
     }
     attention_weights = aggregate_tokens[token_aggregation](attentions)
     L, _, N = attention_weights.shape
@@ -242,8 +242,8 @@ def rauq_uncertainty_mean_heads(
         Union[float, List[float]]: RAUQ uncertainty score(s), depending on `ablation`.
     """
     aggregate_tokens = {
-        "original": get_recurent_attention,
-        "mean_all_tokens": get_average_attention_all,
+        "original": _get_recurent_attention,
+        "mean_all_tokens": _get_average_attention_all,
     }
     attention_weights = aggregate_tokens[token_aggregation](attentions)
     L, _, N = attention_weights.shape
@@ -297,7 +297,7 @@ def rauq_uncertainty_rollout(
     Returns:
         Union[float, List[float]]: RAUQ uncertainty score(s), depending on `ablation`.
     """
-    attention_rollout = get_attention_rollout(attentions, input_length)
+    attention_rollout = _get_attention_rollout(attentions, input_length)
     if token_aggregation == "original":
         attention_weights = attention_rollout.diagonal(offset=-1)[-log_probs.shape[1] :]
     elif token_aggregation == "mean_all_tokens":

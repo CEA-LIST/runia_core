@@ -19,16 +19,16 @@ from sklearn.covariance import EmpiricalCovariance
 from sklearn.neighbors import KernelDensity
 from torch import Tensor
 
-from runia.uncertainty_estimation.baselines import (
+from runia.baselines.from_model_inference import (
     normalizer,
+)
+from runia.baselines.from_precalculated import (
+    mahalanobis_preprocess,
+    mahalanobis_postprocess,
     gmm_fit,
     generalized_entropy,
 )
-from runia.uncertainty_estimation.baselines.from_precalculated import (
-    mahalanobis_preprocess,
-    mahalanobis_postprocess,
-)
-from runia.uncertainty_estimation.inference.abstract_classes import (
+from runia.inference.abstract_classes import (
     Postprocessor,
     OodPostprocessor,
 )

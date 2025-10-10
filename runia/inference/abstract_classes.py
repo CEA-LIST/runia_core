@@ -13,8 +13,8 @@ import torch
 from numpy import ndarray
 from omegaconf import DictConfig
 
-from runia.uncertainty_estimation.baselines import get_baselines_thresholds
-from runia.uncertainty_estimation.feature_extraction.utils import Hook
+from runia.baselines.from_precalculated import get_baselines_thresholds
+from runia.feature_extraction.utils import Hook
 
 __all__ = [
     "record_time",

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Unit tests for the uncertainty_estimation.inference.postprocessors module.
+Unit tests for the evaluation.inference.postprocessors module.
 
 This script provides comprehensive unit tests for the postprocessor classes in the
-runia.uncertainty_estimation.inference.postprocessors module. It tests various
+runia.evaluation.inference.postprocessors module. It tests various
 postprocessing methods for out-of-distribution (OoD) detection including density estimation,
 distance-based methods, and energy-based approaches.
 
@@ -34,7 +34,7 @@ import torch
 from omegaconf import DictConfig
 from torch import Tensor
 
-from runia.uncertainty_estimation.inference.postprocessors import (
+from runia.inference.postprocessors import (
     DDU,
     GEN,
     ViM,

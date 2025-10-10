@@ -6,21 +6,20 @@ import pandas as pd
 import urllib
 import tarfile
 import os
-from runia.uncertainty_estimation.entropy import get_dl_h_z
-from runia.uncertainty_estimation.inference import LaRExInference
-from runia.metrics import (
+from runia.evaluation.entropy import get_dl_h_z
+from runia.evaluation.metrics import (
     select_and_log_best_larex,
     save_roc_ood_detector,
     get_pred_scores_plots,
 )
-from runia.uncertainty_estimation.feature_extraction import (
+from runia.feature_extraction import (
     get_latent_representation_mcd_samples,
     MCSamplerModule,
 )
-from runia.uncertainty_estimation.inference import MDLatentSpace
-from runia.uncertainty_estimation.evaluation import log_evaluate_postprocessors
+from runia.inference import MDLatentSpace, LaRExInference
+from runia.evaluation.latent_space import log_evaluate_postprocessors
 from runia.dimensionality_reduction import apply_pca_ds_split, apply_pca_transform
-from runia.uncertainty_estimation.feature_extraction.utils import apply_dropout, Hook
+from runia.feature_extraction import apply_dropout, Hook
 from tests_architecture import Net
 
 #########################################################################
@@ -163,7 +162,7 @@ class Test(TestCase):
             overall_metrics_df,
             pca_components,
             postprocessor_name="MD",
-            log_mlflow=True,
+            log_mlflow=False,
             multiple_ood_datasets_flag=False,
         )
         self.assertAlmostEqual(0.8106600642204285, auroc_larem, delta=TOL)

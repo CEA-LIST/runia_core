@@ -1,8 +1,13 @@
 from unittest import TestCase, main
 import numpy as np
 
-from runia.dimensionality_reduction import apply_pca_ds_split, apply_pca_transform, plot_samples_pacmap, fit_pacmap, \
-    apply_pacmap_transform
+from runia.dimensionality_reduction import (
+    apply_pca_ds_split,
+    apply_pca_transform,
+    plot_samples_pacmap,
+    fit_pacmap,
+    apply_pacmap_transform,
+)
 
 #########################################################################
 # PARAMETERS
@@ -25,16 +30,16 @@ class Test(TestCase):
                 transformed[0]
                 - np.array(
                     [
-                        -2.1572636,
+                        2.1572636,
                         -0.02918568,
                         1.06571381,
-                        1.0444882,
+                        -1.0444882,
                         -0.10929565,
                         0.67405348,
                         -1.73276094,
                         -2.06602592,
                         -0.11980209,
-                        -1.45960798,
+                        1.45960798,
                     ]
                 )
             ).sum(),
@@ -44,7 +49,7 @@ class Test(TestCase):
         self.assertAlmostEqual(
             (
                 pca_estimator.components_[0]
-                - np.array(
+                + np.array(
                     [
                         -0.37350362,
                         0.06215473,
@@ -84,16 +89,16 @@ class Test(TestCase):
                 ood_transformed[0]
                 - np.array(
                     [
-                        1.99518442,
+                        -1.99518442,
                         -0.39676575,
                         -1.03689749,
-                        0.66995493,
+                        -0.66995493,
                         -0.54343589,
                         0.63696048,
                         0.64696679,
                         -2.20432657,
                         -0.08940193,
-                        0.39293847,
+                        -0.39293847,
                     ]
                 )
             ).sum(),

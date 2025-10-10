@@ -2,7 +2,7 @@ import torch
 from typing import Tuple
 
 
-def reconstruct_attention_matrix(
+def _reconstruct_attention_matrix(
     attentions: Tuple[Tuple[torch.Tensor, ...], ...], input_length: int
 ) -> torch.Tensor:
     """
@@ -44,7 +44,7 @@ def reconstruct_attention_matrix(
     return full_attentions.squeeze(1).cpu()
 
 
-def get_attention_rollout(
+def _get_attention_rollout(
     attentions: Tuple[Tuple[torch.Tensor, ...], ...], input_length: int
 ) -> torch.Tensor:
     """
@@ -61,7 +61,7 @@ def get_attention_rollout(
     Returns:
         torch.Tensor: Joint attention matrix of shape `(seq_len, seq_len)`.
     """
-    attn = reconstruct_attention_matrix(attentions, input_length)
+    attn = _reconstruct_attention_matrix(attentions, input_length)
     L, H, N, _ = attn.shape
     identity = torch.eye(N, device=attn.device)
 
@@ -78,7 +78,7 @@ def get_attention_rollout(
     return joint
 
 
-def get_recurent_attention(
+def _get_recurent_attention(
     attentions: Tuple[Tuple[torch.Tensor, ...], ...], position: int = 1
 ) -> torch.Tensor:
     """
@@ -107,7 +107,7 @@ def get_recurent_attention(
     return full_attentions.cpu()
 
 
-def get_average_attention_all(
+def _get_average_attention_all(
     attentions: Tuple[Tuple[torch.Tensor, ...], ...],
 ) -> torch.Tensor:
     """

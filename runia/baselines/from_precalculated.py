@@ -17,7 +17,7 @@ from scipy.special import logsumexp, softmax
 from torch import Tensor
 from typing import Tuple, Dict, List, Union
 import numpy as np
-from runia.uncertainty_estimation.baselines.from_model_inference import (
+from runia.baselines.from_model_inference import (
     RouteDICE,
     normalizer,
 )

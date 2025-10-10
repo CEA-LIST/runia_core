@@ -20,7 +20,14 @@ setup(
     #                   'pytorch-lightning',
     #                   'torchmetrics'],  # add any additional packages that
     # needs to be installed along with your package. Eg: 'caer'
-    keywords=["Uncertainty", "Artificial Intelligence", "Confidence", "Trustworthiness", "Out-of-distribution detection", "DNNs"],
+    keywords=[
+        "Uncertainty",
+        "Artificial Intelligence",
+        "Confidence",
+        "Trustworthiness",
+        "Out-of-distribution detection",
+        "DNNs",
+    ],
     classifiers=[
         "Development Status :: 4 - Alpha",
         "Intended Audience :: Research and industrial community",

@@ -8,7 +8,7 @@ from omegaconf import DictConfig
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-from runia.metrics import (
+from runia.evaluation.metrics import (
     get_pred_scores_plots,
     get_auroc_results,
     log_evaluate_postprocessors,
@@ -16,9 +16,9 @@ from runia.metrics import (
     save_roc_ood_detector,
     select_and_log_best_larex,
 )
-from runia.uncertainty_estimation.inference.postprocessors import postprocessors_dict
+from runia.inference.postprocessors import postprocessors_dict
 from runia.dimensionality_reduction import apply_pca_ds_split, apply_pca_transform
-from runia.uncertainty_estimation.baselines import baseline_name_dict
+from runia.baselines import baseline_name_dict
 
 __all__ = [
     "log_evaluate_larex",

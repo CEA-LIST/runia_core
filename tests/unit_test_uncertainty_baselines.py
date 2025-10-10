@@ -2,7 +2,7 @@
 tests/unit_test_uncertainty_baselines.py
 
 Unittest suite for non-covered functions in
-`runia.uncertainty_estimation.baselines`.
+`runia.evaluation.baselines`.
 
 Run with:
 
@@ -20,7 +20,7 @@ import logging
 import numpy as np
 import torch
 
-from runia.uncertainty_estimation.baselines.from_precalculated import (
+from runia.baselines.from_precalculated import (
     ash_s_linear_layer,
     generalized_entropy,
     get_labels_from_logits,

@@ -18,7 +18,7 @@ from sklearn.metrics import auc
 import torchmetrics.functional as tmf
 import seaborn as sns
 
-from runia.uncertainty_estimation.inference.postprocessors import postprocessors_dict
+from runia.inference.postprocessors import postprocessors_dict
 
 __all__ = [
     "get_auroc_results",

@@ -1,8 +1,8 @@
 from unittest import TestCase, main
 import numpy as np
 
-from runia.uncertainty_estimation import single_image_entropy_calculation, get_dl_h_z
-from runia.uncertainty_estimation.baselines import (
+from runia.evaluation import single_image_entropy_calculation, get_dl_h_z
+from runia.baselines import (
     get_mcd_pred_uncertainty_score,
     get_predictive_uncertainty_score,
     get_msp_score,
@@ -10,12 +10,13 @@ from runia.uncertainty_estimation.baselines import (
     MDSPostprocessorFromModelInference,
     KNNPostprocessorFromModelInference,
 )
-from runia.uncertainty_estimation.feature_extraction import (
+from runia.feature_extraction import (
     get_latent_representation_mcd_samples,
     MCDSamplesExtractor,
+    apply_dropout,
+    Hook,
 )
-from runia.uncertainty_estimation.feature_extraction.utils import apply_dropout, Hook
-from runia.uncertainty_estimation.inference import MDLatentSpace, KDELatentSpace
+from runia.inference import MDLatentSpace, KDELatentSpace
 from tests_architecture import Net
 import torch
 import torchvision

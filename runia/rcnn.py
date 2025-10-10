@@ -16,13 +16,13 @@ from torch import Tensor
 from tqdm import tqdm
 
 from runia.dimensionality_reduction import apply_pca_transform
-from runia.uncertainty_estimation.inference import (
+from runia.inference import (
     LaRExInference,
     record_time,
     LaRDInference,
 )
-from runia.uncertainty_estimation.feature_extraction.utils import Hook
-from runia.uncertainty_estimation.entropy import get_dl_h_z
+from runia.feature_extraction import Hook
+from runia.evaluation.entropy import get_dl_h_z
 
 # Very bad practice
 dropblock_ext = DropBlock2D(drop_prob=0.4, block_size=1)
