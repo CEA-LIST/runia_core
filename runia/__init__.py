@@ -1,6 +1,4 @@
-""" Import all module's functions"""
-from . import version
-from .version import __version__
+""" Import module's sub modules and handle deprecated attributes. """
 
 from . import feature_extraction
 from . import baselines
@@ -28,10 +26,12 @@ __all__ += dimensionality_reduction.__all__
 __deprecated_attrs__ = {}
 __expired_functions__ = {}
 
+
 def __getattr__(attr):
     # Warn for expired attributes, and return a dummy function
     # that always raises an exception.
     import warnings
+
     try:
         msg = __expired_functions__[attr]
     except KeyError:
@@ -53,5 +53,4 @@ def __getattr__(attr):
         warnings.warn(msg, DeprecationWarning, stacklevel=2)
         return val
 
-    raise AttributeError("module {!r} has no attribute "
-                         "{!r}".format(__name__, attr))
+    raise AttributeError("module {!r} has no attribute " "{!r}".format(__name__, attr))

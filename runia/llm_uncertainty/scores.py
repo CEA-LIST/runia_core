@@ -10,13 +10,17 @@ transformers==4.52.3
 import torch
 import numpy as np
 from typing import Union, List, Dict, Tuple, Any
-from transformers import (
-    PreTrainedModel,
-    PreTrainedTokenizer,
-    GenerationConfig,
-    AutoModelForSequenceClassification,
-    AutoTokenizer,
-)
+
+from runia.import_helper_functions import module_exists
+
+if module_exists("transformers"):
+    from transformers import (
+        PreTrainedModel,
+        PreTrainedTokenizer,
+        GenerationConfig,
+        AutoModelForSequenceClassification,
+        AutoTokenizer,
+    )
 from runia.llm_uncertainty.utils import (
     _semantic_clustering,
     _construct_embedding_matrix,
@@ -82,8 +86,8 @@ def normalized_entropy(log_probs: torch.Tensor) -> float:
 
 
 def semantic_entropy(
-    model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizer,
+    model,
+    tokenizer,
     texts: List[str],
 ) -> Tuple[float, Dict[int, List[int]]]:
     """
@@ -341,11 +345,11 @@ def RAUQ(
 
 
 def compute_uncertainties(
-    model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizer,
+    model,
+    tokenizer,
     prompt: str,
     uncertainty_requests: List[Dict[str, Any]],
-    gen_config: GenerationConfig = None,
+    gen_config=None,
     num_samples: int = 5,
 ) -> Tuple[str, Dict[str, Any]]:
     """

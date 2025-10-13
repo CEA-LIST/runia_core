@@ -2,21 +2,12 @@ from unittest import TestCase, main
 import numpy as np
 
 from runia.evaluation import single_image_entropy_calculation, get_dl_h_z
-from runia.baselines import (
-    get_mcd_pred_uncertainty_score,
-    get_predictive_uncertainty_score,
-    get_msp_score,
-    get_energy_score,
-    MDSPostprocessorFromModelInference,
-    KNNPostprocessorFromModelInference,
-)
 from runia.feature_extraction import (
     get_latent_representation_mcd_samples,
     MCDSamplesExtractor,
     apply_dropout,
     Hook,
 )
-from runia.inference import MDLatentSpace, KDELatentSpace
 from tests_architecture import Net
 import torch
 import torchvision
@@ -33,9 +24,6 @@ LAYER_TYPE = "Conv"
 REDUCTION_METHOD = "fullmean"
 ########################################################################
 
-# torch.manual_seed(SEED)
-# np.random.seed(SEED)
-
 
 class Test(TestCase):
     def setUp(self):
@@ -49,7 +37,10 @@ class Test(TestCase):
             train=False,
             download=True,
             transform=torchvision.transforms.Compose(
-                [torchvision.transforms.ToTensor(), torchvision.transforms.Normalize((0.1307,), (0.3081,))]
+                [
+                    torchvision.transforms.ToTensor(),
+                    torchvision.transforms.Normalize((0.1307,), (0.3081,)),
+                ]
             ),
         )
         self.subset_ds_len = int(len(self.mnist_data) * TEST_SET_PROPORTION)

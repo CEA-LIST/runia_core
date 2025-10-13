@@ -1,5 +1,5 @@
 from setuptools import setup, find_packages
-from runia.version import __version__
+from version import __version__ as VERSION
 
 DESCRIPTION = "Runtime Uncertainty estimation for AI models"
 LONG_DESCRIPTION = "Uncertainty estimation methods for Deep Neural Networks (DNNs) in computer vision and natural language processing, with a focus on out-of-distribution (OOD) detection."
@@ -7,7 +7,7 @@ LONG_DESCRIPTION = "Uncertainty estimation methods for Deep Neural Networks (DNN
 # Setting up
 setup(
     name="runia",
-    version=__version__,
+    version=VERSION,
     author="Daniel Montoya",
     author_email="<daniel-alfonso.montoyavasquez@cea.fr>",
     description=DESCRIPTION,

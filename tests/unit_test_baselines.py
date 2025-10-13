@@ -21,8 +21,14 @@ import numpy as np
 import torch
 import torchvision
 
-from runia.baselines.from_model_inference import get_mcd_pred_uncertainty_score, get_predictive_uncertainty_score, \
-    get_msp_score, get_energy_score, MDSPostprocessorFromModelInference, KNNPostprocessorFromModelInference
+from runia.baselines.from_model_inference import (
+    get_mcd_pred_uncertainty_score,
+    get_predictive_uncertainty_score,
+    get_msp_score,
+    get_energy_score,
+    MDSPostprocessorFromModelInference,
+    KNNPostprocessorFromModelInference,
+)
 from runia.baselines.from_precalculated import (
     ash_s_linear_layer,
     generalized_entropy,
@@ -201,7 +207,10 @@ class TestBaselinesFromModel(TestCase):
             train=False,
             download=True,
             transform=torchvision.transforms.Compose(
-                [torchvision.transforms.ToTensor(), torchvision.transforms.Normalize((0.1307,), (0.3081,))]
+                [
+                    torchvision.transforms.ToTensor(),
+                    torchvision.transforms.Normalize((0.1307,), (0.3081,)),
+                ]
             ),
         )
         self.subset_ds_len = int(len(self.mnist_data) * TEST_SET_PROPORTION)
@@ -220,17 +229,30 @@ class TestBaselinesFromModel(TestCase):
     def test_mcd_pred_uncertainty_score(self):
         torch.manual_seed(SEED)
         samples, pred_h, mi = get_mcd_pred_uncertainty_score(
-            dnn_model=self.tests_model, input_dataloader=self.test_loader, mcd_nro_samples=MCD_N_SAMPLES
+            dnn_model=self.tests_model,
+            input_dataloader=self.test_loader,
+            mcd_nro_samples=MCD_N_SAMPLES,
         )
         self.assertEqual(
-            samples.shape, torch.Size([self.subset_ds_len, MCD_N_SAMPLES, len(self.mnist_data.classes)])
+            samples.shape,
+            torch.Size([self.subset_ds_len, MCD_N_SAMPLES, len(self.mnist_data.classes)]),
         )
         self.assertTrue(
             (
                 samples[0, 0].cpu()
                 - torch.Tensor(
-                [0.1086513326, 0.1488786936, 0.0802124515, 0.0924480408, 0.1231049076,
-                 0.0829655901, 0.0918756202, 0.0897051468, 0.0857857615, 0.0963724107]
+                    [
+                        0.1086513326,
+                        0.1488786936,
+                        0.0802124515,
+                        0.0924480408,
+                        0.1231049076,
+                        0.0829655901,
+                        0.0918756202,
+                        0.0897051468,
+                        0.0857857615,
+                        0.0963724107,
+                    ]
                 )
             ).sum()
             < TOL
@@ -447,26 +469,60 @@ class TestBaselinesFromModel(TestCase):
             (
                 mahalanobis_distance_estimator.precision[0, :LATENT_SPACE_DIM].cpu().numpy()
                 - np.array(
-                [170.5094604492, -52.0242500305, 34.4856300354, -5.5944499969,
-                 8.1118783951, -21.6018276215, 10.9460678101, 23.8828983307,
-                 -43.7527389526, 33.3161811829, -24.4308834076, 51.1151428223,
-                 -18.2162342072, 2.5270247459, -19.2660961151, -10.6695184708,
-                 -1.0805386305, -23.0190925598, -40.0322990417, -10.8404769897]
+                    [
+                        170.5094604492,
+                        -52.0242500305,
+                        34.4856300354,
+                        -5.5944499969,
+                        8.1118783951,
+                        -21.6018276215,
+                        10.9460678101,
+                        23.8828983307,
+                        -43.7527389526,
+                        33.3161811829,
+                        -24.4308834076,
+                        51.1151428223,
+                        -18.2162342072,
+                        2.5270247459,
+                        -19.2660961151,
+                        -10.6695184708,
+                        -1.0805386305,
+                        -23.0190925598,
+                        -40.0322990417,
+                        -10.8404769897,
+                    ]
                 )
             ).sum(),
             0.0,
-            delta=TOL
+            delta=TOL,
         )
         self.assertEqual(mahalanobis_distance_estimator.class_mean.shape, torch.Size([10, 50]))
         self.assertTrue(
             (
                 mahalanobis_distance_estimator.class_mean[0, :LATENT_SPACE_DIM].cpu()
                 - torch.Tensor(
-                [0.6052651405, 0.0038446099, 0.2389417142, 0.3413681388,
-                 0.2832605839, 0.0235106181, 0.0393453613, -0.5464248657,
-                 0.1489282548, -0.6214435697, 0.2256181985, -0.2500761747,
-                 -0.0831953958, 0.1687345952, 0.0752467439, 0.0566020831,
-                 0.0543221831, -0.0054004127, -0.3992331624, 0.0079337684]
+                    [
+                        0.6052651405,
+                        0.0038446099,
+                        0.2389417142,
+                        0.3413681388,
+                        0.2832605839,
+                        0.0235106181,
+                        0.0393453613,
+                        -0.5464248657,
+                        0.1489282548,
+                        -0.6214435697,
+                        0.2256181985,
+                        -0.2500761747,
+                        -0.0831953958,
+                        0.1687345952,
+                        0.0752467439,
+                        0.0566020831,
+                        0.0543221831,
+                        -0.0054004127,
+                        -0.3992331624,
+                        0.0079337684,
+                    ]
                 )
             ).sum()
             < TOL
@@ -509,16 +565,36 @@ class TestBaselinesFromModel(TestCase):
             ).sum()
             < TOL
         )
-        post_processed = knn_processor.postprocess(self.tests_model, self.test_loader, hooked_layer)[1]
+        post_processed = knn_processor.postprocess(
+            self.tests_model, self.test_loader, hooked_layer
+        )[1]
         self.assertEqual(post_processed.shape, (self.subset_ds_len,))
         self.assertTrue(
             (
                 post_processed[:LATENT_SPACE_DIM]
                 - np.array(
-                [-0.38611746, -0.31907094, -0.3071116, -0.30398384, -0.35546952,
-                 -0.36445117, -0.25926206, -0.42174175, -0.28614113, -0.4049912,
-                 -0.3439978, -0.2986006, -0.2777693, -0.3120209, -0.40481457,
-                 -0.2988768, -0.26255494, -0.25697285, -0.2816273, -0.30161113]
+                    [
+                        -0.38611746,
+                        -0.31907094,
+                        -0.3071116,
+                        -0.30398384,
+                        -0.35546952,
+                        -0.36445117,
+                        -0.25926206,
+                        -0.42174175,
+                        -0.28614113,
+                        -0.4049912,
+                        -0.3439978,
+                        -0.2986006,
+                        -0.2777693,
+                        -0.3120209,
+                        -0.40481457,
+                        -0.2988768,
+                        -0.26255494,
+                        -0.25697285,
+                        -0.2816273,
+                        -0.30161113,
+                    ]
                 )
             ).sum()
             < TOL
@@ -630,6 +706,7 @@ class TestBaselinesFromModel(TestCase):
                 atol=TOL,
             )
         )
+
 
 if __name__ == "__main__":
     main()

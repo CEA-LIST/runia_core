@@ -12,13 +12,16 @@
 <br>
 
 ---
-# Guideline CEA-LSEA Out-of-Distribution Detection using DNN Latent Representations Uncertainty
+# Presentation
 ---
 
-CEA-LSEA package for Out-of-Distribution (OoD) detection using the uncertainty (entropy) from DNN latent representations.
+RunIA is an open-source python library for the evaluation and deployment of uncertainty estimation methods. 
+It covers several methods, across Computer vision tasks and hallucination detection in LLms. 
+The library has a strong focus on Out-of-Distribution (OoD) detection for image classification and object detection tasks.
+
 The package has been used with the following applications, the corresponding DNN architectures and datasets:
 
-- **Simple Classification:**
+- **Image Classification:**
     - **In-Distribution Dataset:** CIFAR10
     - **Out-of-Distribution Datasets:** FMNIST, SVHN, Places365, Textures, iSUN, LSUN-C, LSUN-R
     - **DNN Architectures:**
@@ -26,10 +29,14 @@ The package has been used with the following applications, the corresponding DNN
         2. ResNet-18 with Spectral Normalization
 
 - **Object Detection:**
-    - **In-Distribution Dataset:** BDD100k
-    - **Out-of-Distribution Datasets:** Pascal VOC, Openimages
+    - **In-Distribution Datasets:** BDD100k, Pascal VOC
+    - **Out-of-Distribution Datasets:** COCO, Openimages
     - **DNN Architectures:**
       1. Faster RCNN
+      2. Yolov8
+      3. Real-Time DETR
+      4. Deformable DETR
+      5. OWLv2
 
 - **Semantic Segmentation:**
     - **In-Distribution Dataset:** Woodscape  & Cityscapes
@@ -37,6 +44,13 @@ The package has been used with the following applications, the corresponding DNN
     - **DNN Architectures:**
       1. Deeplabv3+
       2. U-Net
+
+- **Hallucination Detection in LLMs:**
+    - **In-Distribution Dataset:** SQuADv2
+    - **Out-of-Distribution Datasets:** TriviaQA, Natural Questions, HotpotQA
+    - **LLM Architectures:**
+      1. Llama
+      2. DistilBERT-base
 
 In all the above cases, the DNNs were slightly modified to capture _epistemic_ uncertainty using the Monte-Carlo Dropout by adding a ``DropBlock2D`` layer.
 
@@ -50,11 +64,11 @@ In all the above cases, the DNNs were slightly modified to capture _epistemic_ u
 <div id='specifications'/>
 
 ## 🔍 Specifications
-- Version: 1.1.0
-- Python Version: python 3.8
+- Version: 0.1.0
+- Python Version: python 3.9
 - Strong Dependencies: torch, entropy_estimators, numpy, sklearn, dropblock, pandas, mlflow, matplotlib
-- Thematic: Computer vision
-- Trustworthy: Uncertainty Estimation -  OoD/Anomaly detection
+- Thematic: Uncertainty estimation
+- Trustworthiness: Out-of-Distribution (OOD) Detection - Open Set Object Detection - Hallucination Detection
 - Hardware : GPU
 
 
@@ -68,26 +82,26 @@ In all the above cases, the DNNs were slightly modified to capture _epistemic_ u
 
 ## 🚀 Quick Start
 
-To install and use the component , it is recommended to create a Python virtual environment. You can do that with virtualenv, as follows:
+To install and use the library , it is recommended to create a Python virtual environment. You can do that with virtualenv, as follows:
 
 ### Setting environement
 
 With `virtualenv`
 ```bash
 pip install virtualenv
-virtualenv ls_ood_detection_env
-source ls_ood_detection_env/bin/activate
+virtualenv runia_env
+source runia_env/bin/activate
 ```
 
 Or using conda:
 ```bash
-conda create -n ls_ood_detection_env python=3.8
-conda activate ls_ood_detection_env
+conda create -n runia_env python=3.9
+conda activate runia_env
 ```
 
 
 ### Installation
-After creating the environment with python 3.8, install the `requirements.txt` using:
+After creating the environment with python 3.9, install the `requirements.txt` using:
 ```bash
 pip install -r requirements.txt
 ```
@@ -101,7 +115,7 @@ After installing all the requirements, then in the base folder of the repo do `p
 
 Global steps for using the package:
 
-* **To make an evaluation** of how the component performs at classifying one or several Out-of-Distribution (OoD) test datasets with respect to an In-Distribution (InD) test dataset:
+* **To make an evaluation** of how several uncertainty estimation methods perform at classifying one or several Out-of-Distribution (OoD) test datasets with respect to an In-Distribution (InD) test dataset:
 
     1. Load your Dataloader Modules for InD and OoD datasets. For the InD it is necessary to use the train and a test set; for the OoD only the test set is needed.
     2. Load your DNN Module trained on the InD dataset.
@@ -137,13 +151,13 @@ metrics. For a full detailed example of evaluating the component refer to
 
 ```python
 import torch
-from runia.uncertainty_estimation import (
+from runia.evaluation import (
     Hook,
     get_latent_representation_mcd_samples,
     apply_dropout,
     get_dl_h_z
 )
-from runia.metrics import log_evaluate_lared_larem
+from runia.evaluation.metrics import log_evaluate_lared_larem
 
 N_MCD_SAMPLES = 16
 N_PCA_COMPONENTS = 256
@@ -216,7 +230,7 @@ import torch
 from torchvision import transforms
 import numpy as np
 from PIL import Image
-from runia.uncertainty_estimation import Hook, LaRExInference, MCSamplerModule, LaREMPostprocessor
+from runia.evaluation import Hook, LaRExInference, MCSamplerModule, LaREMPostprocessor
 from runia import apply_pca_ds_split
 
 N_MCD_SAMPLES = 16
@@ -255,7 +269,7 @@ test_ind_larem = larem_ds_shift_detector.postprocess(pca_transformation.transfor
 # Calculate threshold
 mean_ind_larem, std_ind_larem = np.mean(test_ind_larem), np.std(test_ind_larem)
 # Here we use the 95% confidence z score
-threshold_larem = mean_ind_larem - (z_95 * std_ind_larem) 
+threshold_larem = mean_ind_larem - (z_95 * std_ind_larem)
 
 ############ Inference ##############
 # Instantiate Inference module and sampler

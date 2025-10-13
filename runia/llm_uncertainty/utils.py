@@ -1,12 +1,14 @@
 from typing import List, Dict, Tuple
-from transformers import PreTrainedModel, PreTrainedTokenizer
 import torch
 import torch.nn.functional as F
 
+from runia.import_helper_functions import module_exists
 
-def _are_equivalent(
-    model: PreTrainedModel, tokenizer: PreTrainedTokenizer, text1: str, text2: str
-) -> bool:
+if module_exists("transformers"):
+    from transformers import PreTrainedModel, PreTrainedTokenizer
+
+
+def _are_equivalent(model, tokenizer, text1: str, text2: str) -> bool:
     """
     Determines whether two input texts are semantically equivalent using a
     natural language inference (NLI) model.
@@ -41,9 +43,7 @@ def _are_equivalent(
     return (0 not in implications) and (implications != (1, 1))
 
 
-def _semantic_clustering(
-    model: PreTrainedModel, tokenizer: PreTrainedTokenizer, texts: List[str]
-) -> Dict[int, List[int]]:
+def _semantic_clustering(model, tokenizer, texts: List[str]) -> Dict[int, List[int]]:
     """
     Clusters input texts into groups of semantically equivalent sentences.
 
