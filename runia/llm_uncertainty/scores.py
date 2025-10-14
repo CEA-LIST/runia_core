@@ -62,8 +62,8 @@ def eigen_score(hidden_states: Tuple[torch.Tensor, ...], alpha: float = 1e-3) ->
     """
     embedding_matrix = _construct_embedding_matrix(hidden_states)
     cov_matrix = torch.cov(embedding_matrix.T).cpu().numpy().astype(float)
-    _, s, _ = np.linalg.svd(cov_matrix + alpha * np.eye(cov_matrix.shape[0]))
-    return float(np.mean(np.log(s)))
+    _, singular_values, _ = np.linalg.svd(cov_matrix + alpha * np.eye(cov_matrix.shape[0]))
+    return float(np.mean(np.log(singular_values)))
 
 
 def normalized_entropy(log_probs: torch.Tensor) -> float:
