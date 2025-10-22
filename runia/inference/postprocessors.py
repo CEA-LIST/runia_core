@@ -8,7 +8,7 @@
 #    Fabio Arnez, probabilistic adaptation
 #    Daniel Montoya
 import warnings
-from typing import Union
+from typing import Union, Dict, List
 
 import faiss
 import numpy as np
@@ -36,23 +36,40 @@ from runia.inference.abstract_classes import (
 )
 
 __all__ = [
-    "KDELatentSpace",
-    "MDLatentSpace",
-    "cMDLatentSpace",
-    "KNNLatentSpace",
-    "GMMLatentSpace",
-    "Energy",
-    "MSP",
-    "GEN",
-    "DDU",
-    "Mahalanobis",
-    "ViM",
-    "ASH",
-    "DICE",
-    "ReAct",
     "postprocessors_dict",
     "postprocessor_input_dict",
 ]
+
+# Postprocessors registry
+postprocessors_dict: Dict[str, Postprocessor] = {}
+# Postprocessor input registry
+postprocessor_input_dict: Dict[str, List[str]] = {}
+
+
+def register_postprocessor(
+    postprocessor_name: str, postprocessor_input: List[str]
+):
+    """
+    Registers a postprocessor for the given postprocessor name. This decorator
+    allows associating a list of input names required for the postprocessor and is
+    used to dynamically manage the input configuration for postprocessors.
+
+    Args:
+        postprocessor_name: Name of the postprocessor to register input for.
+        postprocessor_input: List of input parameter names associated with the postprocessor.
+
+    Returns:
+        A decorator function that registers the postprocessor input and returns the original class.
+
+    """
+
+    def decorator(cls):
+        postprocessors_dict[postprocessor_name] = cls
+        postprocessor_input_dict[postprocessor_name] = postprocessor_input
+        __all__.append(cls.__name__)
+        return cls
+
+    return decorator
 
 
 class DetectorKDE:
@@ -109,6 +126,7 @@ class DetectorKDE:
         return self.density.score_samples(test_embeddings)
 
 
+@register_postprocessor("KDE", postprocessor_input=["latent_space_means"])
 class KDELatentSpace(Postprocessor):
     """
     Kernel Density Estimator Distance Score uncertainty estimator class for already calculated representations.
@@ -160,6 +178,7 @@ class KDELatentSpace(Postprocessor):
         return self.detector.get_density_scores(test_feats)
 
 
+@register_postprocessor("MD", postprocessor_input=["latent_space_means"])
 class MDLatentSpace(Postprocessor):
     """
     Mahalanobis distance Score uncertainty estimator class for already calculated representations.
@@ -227,6 +246,7 @@ class MDLatentSpace(Postprocessor):
         return conf_score
 
 
+@register_postprocessor("cMD", postprocessor_input=["latent_space_means"])
 class cMDLatentSpace(Postprocessor):
     """
     LaREM with category specific information Distance Score uncertainty estimator class for
@@ -340,6 +360,7 @@ class cMDLatentSpace(Postprocessor):
         return all_conf_score_t.numpy()
 
 
+@register_postprocessor("KNN", postprocessor_input=["latent_space_means"])
 class KNNLatentSpace(Postprocessor):
     """
     KNN Distance Score uncertainty estimator class for already calculated representations.
@@ -407,6 +428,7 @@ class KNNLatentSpace(Postprocessor):
         return all_kth_dist_score_np
 
 
+@register_postprocessor("GMM", postprocessor_input=["latent_space_means"])
 class GMMLatentSpace(Postprocessor):
     """
     LaREG Gaussian Mixture model Score estimator class for already calculated representations.
@@ -477,6 +499,7 @@ class GMMLatentSpace(Postprocessor):
         return energy
 
 
+@register_postprocessor("energy", postprocessor_input=["logits"])
 class Energy(OodPostprocessor):
     """
     Performs energy-based postprocessing for out-of-distribution (OOD) detection.
@@ -535,6 +558,7 @@ class Energy(OodPostprocessor):
         return scores
 
 
+@register_postprocessor("msp", postprocessor_input=["logits"])
 class MSP(OodPostprocessor):
     """
     Performs Maximum Softmax Probability (MSP) postprocessing for out-of-distribution (OOD) detection.
@@ -593,6 +617,7 @@ class MSP(OodPostprocessor):
         return scores
 
 
+@register_postprocessor("gen", postprocessor_input=["logits"])
 class GEN(OodPostprocessor):
     """
     Applies a generalized entropy-based method for postprocessing out-of-distribution (OOD) detection scores.
@@ -681,6 +706,7 @@ class GEN(OodPostprocessor):
         return scores
 
 
+@register_postprocessor("ddu", postprocessor_input=["features"])
 class DDU(OodPostprocessor):
     """
     DDU (Deep Deterministic Uncertainty) postprocessor class.
@@ -784,6 +810,7 @@ class DDU(OodPostprocessor):
         return scores
 
 
+@register_postprocessor("mahalanobis", postprocessor_input=["features"])
 class Mahalanobis(OodPostprocessor):
     """Handles Mahalanobis distance calculation for out-of-distribution detection.
 
@@ -883,6 +910,7 @@ class Mahalanobis(OodPostprocessor):
         return test_scores
 
 
+@register_postprocessor("vim", postprocessor_input=["features", "logits"])
 class ViM(OodPostprocessor):
     """
     Virtual logit Matching (ViM) class.
@@ -1017,6 +1045,7 @@ class ViM(OodPostprocessor):
         return score
 
 
+@register_postprocessor("ash", postprocessor_input=["features"])
 class ASH(OodPostprocessor):
     """
     Activation Shaping (ASH) class.
@@ -1130,6 +1159,7 @@ class ASH(OodPostprocessor):
         return scores
 
 
+@register_postprocessor("dice", postprocessor_input=["features"])
 class DICE(OodPostprocessor):
     """
     DICE (Directed Sparsification) class.
@@ -1268,6 +1298,7 @@ class DICE(OodPostprocessor):
         return scores
 
 
+@register_postprocessor("react", postprocessor_input=["features"])
 class ReAct(OodPostprocessor):
     """
     ReAct (Rectified Activations) class.
@@ -1388,37 +1419,3 @@ class ReAct(OodPostprocessor):
         scores = logsumexp(test_logits, axis=1)
         scores = self.flip_sign_fn(scores)
         return scores
-
-
-postprocessors_dict = {
-    "KDE": KDELatentSpace,
-    "MD": MDLatentSpace,
-    "KNN": KNNLatentSpace,
-    "cMD": cMDLatentSpace,
-    "GMM": GMMLatentSpace,
-    "energy": Energy,
-    "msp": MSP,
-    "gen": GEN,
-    "ddu": DDU,
-    "mahalanobis": Mahalanobis,
-    "vim": ViM,
-    "ash": ASH,
-    "dice": DICE,
-    "react": ReAct,
-}
-
-postprocessor_input_dict = {
-    "KDE": ["latent_space_means"],
-    "KNN": ["latent_space_means"],
-    "GMM": ["latent_space_means"],
-    "MD": ["latent_space_means"],
-    "energy": ["logits"],
-    "msp": ["logits"],
-    "gen": ["logits"],
-    "ddu": ["features"],
-    "mahalanobis": ["features"],
-    "vim": ["features", "logits"],
-    "ash": ["features"],
-    "dice": ["features"],
-    "react": ["features"],
-}

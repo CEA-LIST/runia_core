@@ -20,7 +20,7 @@ from runia.inference import MDLatentSpace, LaRExInference
 from runia.evaluation.latent_space import log_evaluate_postprocessors
 from runia.dimensionality_reduction import apply_pca_ds_split, apply_pca_transform
 from runia.feature_extraction import apply_dropout, Hook
-from tests_architecture import Net
+from .tests_architecture import Net
 
 #########################################################################
 # PARAMETERS
@@ -42,12 +42,12 @@ transforms = torchvision.transforms.Compose(
     [torchvision.transforms.ToTensor(), torchvision.transforms.Normalize((0.1307,), (0.3081,))]
 )
 mnist_data = torchvision.datasets.MNIST(
-    "./mnist-data/",
+    "./tests/mnist-data/",
     train=False,
     download=True,
     transform=transforms,
 )
-if not os.path.exists("./emnist_data_source/EMNIST/raw"):
+if not os.path.exists("./tests/emnist_data_source/EMNIST/raw"):
     print("getting emnist raw data from confianceai repository ..")
     if not os.path.exists("./emnist_data_source/EMNIST"):
         os.makedirs("./emnist_data_source/EMNIST")
@@ -57,13 +57,13 @@ if not os.path.exists("./emnist_data_source/EMNIST/raw"):
         "./emnist_data_source/EMNIST/emnist.tar.gz",
     )
 
-    file = tarfile.open("./emnist_data_source/EMNIST/emnist.tar.gz")
+    file = tarfile.open("./tests/emnist_data_source/EMNIST/emnist.tar.gz")
     file.extractall("./emnist_data_source/EMNIST")
     file.close()
     print("emnist raw data have been downloaded")
 
 emnist_data = torchvision.datasets.EMNIST(
-    "./emnist_data_source", split="letters", train=False, download=False, transform=transforms
+    "./tests/emnist_data_source", split="letters", train=False, download=False, transform=transforms
 )
 # Subset InD dataset
 ind_subset_ds_len = int(len(mnist_data) * TEST_SET_PROPORTION)

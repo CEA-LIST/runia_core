@@ -1,0 +1,74 @@
+# Uncomment only for IRT git repo
+#include:
+# - project: 'confianceai/ec_1/fa2_infrastructure/gitlab-ci-pipelines'
+#   ref: master
+#   file: 'python-lib-build.gitlab-ci.yml'
+
+# different stages in the pipeline
+stages:
+  - Static Analysis
+  - Test
+  - build_doc
+  - build_releases
+  - build_snapshots
+#defines the job in Static Analysis
+black:
+  stage: Static Analysis
+  image: "python:3.9"
+  before_script:
+  - python --version
+  - pip install -r requirements.txt
+  - pip install .
+  script:
+  - black .
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^((0|[1-9]\d*){1,2}\.){2}(0|[1-9]\d*){1,2}-\b(dev|rc)\b$/
+
+
+unit-test-job:
+  stage: Test
+  image: "python:3.9"
+  before_script:
+  - python --version
+  - pip install -r requirements.txt
+  - pip install .
+  script:
+    - python ./tests/unit_test_metrics.py
+    - python ./tests/unit_test_dim_reduction.py
+    - python ./tests/unit_test_uncertainty_estimation.py
+    - python ./tests/unit_test_detection_dataset.py
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^((0|[1-9]\d*){1,2}\.){2}(0|[1-9]\d*){1,2}-\b(dev|rc)\b$/
+
+
+integration-tests-job:
+  stage: Test
+  image: "python:3.9"
+  before_script:
+  - python --version
+  - pip install -r requirements.txt
+  - pip install .
+  script:
+    - python ./tests/integration_tests.py
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^((0|[1-9]\d*){1,2}\.){2}(0|[1-9]\d*){1,2}-\b(dev|rc)\b$/
+
+
+# Job with specific name, called pages.
+# This setting tells the runner you want the job to deploy your website with GitLab Pages
+#pages:
+#  stage: build_doc
+#  image: python:3.8
+#  before_script:
+#    - apt-get update
+#    - apt-get install -y make
+#  script:
+#    - pip3 install -r requirements.txt
+#    - ./generate_doc_sphinx.sh
+#    - mkdir -p public/
+#    - cp -r docs/_build/html/* public
+#  artifacts:
+#    paths:
+#      - public
+#  rules:
+#      - if: $CI_COMMIT_TAG =~ /^((0|[1-9]\d*){1,2}\.){2}(0|[1-9]\d*){1,2}-\b(dev|rc)\b$/
