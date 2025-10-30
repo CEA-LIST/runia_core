@@ -14,6 +14,7 @@ import mlflow
 import matplotlib.pyplot as plt
 import pandas as pd
 from omegaconf import DictConfig
+from pyarrow.lib import optional
 from sklearn.metrics import auc
 import torchmetrics.functional as tmf
 import seaborn as sns
@@ -55,12 +56,6 @@ def get_auroc_results(
         (pd.Dataframe): Results in a pandas dataframe format and optionally a dictionary with
             results for mlflow
     """
-    assert isinstance(detect_exp_name, str), "detect_exp_name must be a string"
-    assert isinstance(ind_samples_scores, np.ndarray), "ind_samples_scores must be a numpy array"
-    assert isinstance(ood_samples_scores, np.ndarray), "ood_samples_scores must be a numpy array"
-    assert isinstance(
-        return_results_for_mlflow, bool
-    ), "return_results_for_mlflow must be a boolean"
     labels_ind_test = np.ones((ind_samples_scores.shape[0], 1))  # positive class
     labels_ood_test = np.zeros((ood_samples_scores.shape[0], 1))  # negative class
 
@@ -148,8 +143,6 @@ def save_roc_ood_detector(
     Returns:
         (plt.Figure): A figure to be saved or logged with mlflow
     """
-    assert isinstance(results_table, pd.DataFrame), "results_table must be a pandas dataframe"
-    assert isinstance(plot_title, str), "plot_title must be a string"
     fig, ax = plt.subplots(figsize=(8, 6))
     for i in results_table.index:
         if any([postp in i for postp in postprocessors]):
@@ -182,7 +175,7 @@ def save_roc_ood_detector(
 def save_scores_plots(
     scores_ind: np.ndarray,
     ood_scores_dict: Dict,
-    ood_datasets_list: List,
+    ood_datasets_list: List[str],
     ind_dataset_name: str,
     post_processor_name: str = "LaREM",
 ) -> Dict:
@@ -203,13 +196,6 @@ def save_scores_plots(
     Returns:
         Dictionary of plots where the keys are the plot names and the values are the figures
     """
-    assert isinstance(scores_ind, np.ndarray), "scores_ind must be a numpy array"
-    assert isinstance(ood_scores_dict, dict), "ood_lared_scores_dict must be a dictionary"
-    assert hasattr(ood_datasets_list, "__iter__"), "ood_datasets_list must be an iterable"
-    assert all(isinstance(item, str) for item in ood_datasets_list), (
-        "ood_datasets_list items must" " be strings"
-    )
-    assert isinstance(ind_dataset_name, str), "ind_dataset_name must be a string"
     assert post_processor_name in postprocessors_dict.keys()
     df_scores_ind = pd.DataFrame(scores_ind, columns=[f"{post_processor_name} score"])
     df_scores_ind.insert(0, "Dataset", "")
@@ -252,13 +238,6 @@ def get_pred_scores_plots(
     Returns:
         Figure with the density scores of the InD and the OoD datasets
     """
-    assert isinstance(experiment, dict)
-    assert hasattr(ood_datasets_list, "__iter__"), "ood_datasets_list must be an iterable"
-    assert all(isinstance(item, str) for item in ood_datasets_list), (
-        "ood_datasets_list items must" " be strings"
-    )
-    assert isinstance(title, str)
-    assert isinstance(ind_dataset_name, str)
     df_pred_h_scores_ind = pd.DataFrame(experiment["InD"], columns=[experiment["x_axis"]])
     df_pred_h_scores_ind.insert(0, "Dataset", "")
     df_pred_h_scores_ind.loc[:, "Dataset"] = ind_dataset_name
@@ -287,8 +266,8 @@ def log_evaluate_postprocessors(
     ood_dict: Dict[str, np.ndarray],
     ood_datasets_names: List[str],
     experiment_name_extension: str = "",
-    return_density_scores: Union[None, str] = None,
-    log_step: Union[int, None] = None,
+    return_density_scores: Optional[str] = None,
+    log_step: Optional[int] = None,
     mlflow_logging: bool = False,
     postprocessors=None,
     cfg: DictConfig = None,
@@ -318,18 +297,9 @@ def log_evaluate_postprocessors(
     Returns:
         Pandas dataframe with results, optionally LaRED density score
     """
-    assert isinstance(ind_dict["train latent_space_means"], np.ndarray)
-    assert isinstance(ind_dict["valid latent_space_means"], np.ndarray)
-    assert isinstance(ood_dict, dict)
-    assert isinstance(experiment_name_extension, str)
     if return_density_scores is not None:
-        # assert return_density_scores in ("LaRED", "LaREM", "LaREK", "LaREcM")
         assert return_density_scores in postprocessors_dict.keys()
-    if log_step is not None:
-        assert isinstance(log_step, int), "log_step is either None or an integer"
-    assert isinstance(mlflow_logging, bool)
     if postprocessors is None:
-        # postprocessors = ["LaRED", "LaREM", "LaREK", "LaREcM"]
         postprocessors = postprocessors_dict.keys()
 
     # Initialize df to store all the results
@@ -431,9 +401,6 @@ def select_and_log_best_larex(
     Returns:
         Tuple with the best auroc, aupr, fpr and the N components.
     """
-    assert isinstance(overall_metrics_df, pd.DataFrame)
-    assert hasattr(n_pca_components_list, "__iter__")
-    assert isinstance(log_mlflow, bool)
     assert postprocessor_name in postprocessors_dict.keys(), f"Got {postprocessor_name}"
     means_df = pd.DataFrame(columns=["auroc", "fpr@95", "aupr"])
     temp_df = pd.DataFrame(columns=["auroc", "fpr@95", "aupr"])

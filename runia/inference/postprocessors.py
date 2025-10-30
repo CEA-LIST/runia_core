@@ -101,7 +101,6 @@ class DetectorKDE:
             kernel: Kernel. Default='gaussian'
             bandwidth: Bandwidth of the estimator.
         """
-        assert isinstance(train_embeddings, np.ndarray), "train_embeddings must be a numpy array"
         self.kernel = kernel
         self.bandwidth = bandwidth
         self.train_embeddings = train_embeddings
@@ -157,7 +156,6 @@ class KDELatentSpace(Postprocessor):
             ind_train_feats: InD features to estimate the distribution
 
         """
-        assert isinstance(ind_train_feats, np.ndarray), "ind_feats must be a numpy array"
         assert ind_train_feats.ndim == 2, "ind_feats must be 2 dimensional"
         if not self._setup_flag:
             self.detector = DetectorKDE(train_embeddings=ind_train_feats)
@@ -177,7 +175,6 @@ class KDELatentSpace(Postprocessor):
         Returns:
             (tuple): Confidence scores
         """
-        assert isinstance(test_feats, np.ndarray), "test_feats must be a numpy array"
         assert test_feats.ndim == 2, "ood_feats must be 2 dimensional"
         return self.detector.get_density_scores(test_feats)
 
@@ -211,7 +208,6 @@ class MDLatentSpace(Postprocessor):
             ind_train_feats: InD features to estimate the distribution
 
         """
-        assert isinstance(ind_train_feats, np.ndarray), "ind_feats must be a numpy array"
         assert ind_train_feats.ndim == 2, "ind_feats must be 2 dimensional"
         if not self._setup_flag:
             # estimate mean and variance from training set
@@ -242,7 +238,6 @@ class MDLatentSpace(Postprocessor):
         Returns:
             (np.ndarray): Confidence scores
         """
-        assert isinstance(test_feats, np.ndarray), "test_feats must be a numpy array"
         assert test_feats.ndim == 2, "test_feats must be 2 dimensional"
         diff = test_feats - self.feats_mean
         conf_score = -np.diag(np.matmul(np.matmul(diff, self.precision), np.transpose(diff)))
@@ -341,7 +336,6 @@ class cMDLatentSpace(Postprocessor):
                 pred_labels = Tensor(pred_labels)
         except KeyError:
             raise ValueError("pred_logits not provided")
-        # assert isinstance(ood_feats, np.ndarray), "ood_feats must be a numpy array"
         if isinstance(test_feats, np.ndarray):
             test_feats = Tensor(test_feats)
         assert test_feats.ndim == 2, "test_feats must be 2 dimensional"
@@ -397,7 +391,6 @@ class KNNLatentSpace(Postprocessor):
             ind_train_feats: InD features to estimate the distribution
 
         """
-        assert isinstance(ind_train_feats, np.ndarray), "ind_train_feats must be a numpy array"
         assert ind_train_feats.ndim == 2, "ind_train_feats must be 2 dimensional"
         if not self._setup_flag:
             self.activation_log = np.array([normalizer(feat) for feat in ind_train_feats])
@@ -420,7 +413,6 @@ class KNNLatentSpace(Postprocessor):
         Returns:
             (tuple): Confidence scores
         """
-        assert isinstance(test_feats, np.ndarray), "test_feats must be a numpy array"
         assert test_feats.ndim == 2, "test_feats must be 2 dimensional"
         all_kth_dist_score = []
         for feat in test_feats:
@@ -464,7 +456,6 @@ class GMMLatentSpace(Postprocessor):
             ind_train_feats: InD features to estimate the distribution
 
         """
-        assert isinstance(ind_train_feats, np.ndarray), "ind_train_feats must be a numpy array"
         assert ind_train_feats.ndim == 2, "ind_train_feats must be 2 dimensional"
         if not self._setup_flag:
             # Get ground truth InD labels
@@ -496,7 +487,6 @@ class GMMLatentSpace(Postprocessor):
         Returns:
             (tuple): Confidence scores
         """
-        assert isinstance(test_feats, np.ndarray), "test_feats must be a numpy array"
         assert test_feats.ndim == 2, "test_feats must be 2 dimensional"
         log_probs = self.gmm.log_prob(Tensor(test_feats[:, None, :]))
         energy: np.ndarray = logsumexp(log_probs.numpy(), axis=1)

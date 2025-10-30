@@ -52,8 +52,6 @@ def get_msp_score_rcnn(dnn_model: torch.nn.Module, input_dataloader: DataLoader)
     Returns:
         np.ndarray: The MSP scores
     """
-    assert isinstance(dnn_model, torch.nn.Module), "dnn_model must be a pytorch model"
-    assert isinstance(input_dataloader, DataLoader), "input_dataloader must be a DataLoader"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # gtsrb_model.to(device)
     dl_preds_msp_scores = []
@@ -93,9 +91,6 @@ def get_dice_feat_mean_react_percentile_rcnn(
     Returns:
         Tuple[np.ndarray, float]: The DICE expected values, and the ReAct threshold
     """
-    assert isinstance(dnn_model, torch.nn.Module), "dnn_model must be a pytorch model"
-    assert isinstance(ind_dataloader, DataLoader), "ind_dataloader must be a DataLoader"
-    assert isinstance(react_percentile, int), "react_percentile must be an integer"
     assert 0 < react_percentile < 100, "react_percentile must be greater than 0 and less than 100"
     feat_log = []
     dnn_model.model.eval()
@@ -123,9 +118,6 @@ def get_energy_score_rcnn(dnn_model: torch.nn.Module, input_dataloader: DataLoad
     Returns:
         Tuple[np.ndarray, np.ndarray]: Energy scores from the Raw and the filtered outputs
     """
-    assert isinstance(dnn_model, torch.nn.Module), "dnn_model must be a pytorch model"
-    assert isinstance(input_dataloader, DataLoader), "input_dataloader must be a DataLoader"
-
     # Here we take the enrgy as a mean of the whole 1000 proposals
     raw_preds_energy_scores = []
     # Here we take the enrgy as a mean of the filtered detections after NMS
@@ -191,9 +183,6 @@ def get_ls_mcd_samples_rcnn(
     Returns:
         Monte-Carlo Dropout samples for the input dataloader
     """
-    assert isinstance(mcd_nro_samples, int), "mcd_nro_samples must be an integer"
-    assert isinstance(data_loader, DataLoader)
-    assert isinstance(hook_dropout_layer, Hook), "hook_dropout_layer must be an Hook"
     assert layer_type in (
         "FC",
         "Conv",
@@ -320,7 +309,7 @@ class MCSamplerRCNN(torch.nn.Module):
             layer_type: Either 'Conv' or 'FC'
         """
         super(MCSamplerRCNN, self).__init__()
-        assert layer_type == "RPN", "layer_type must be either 'RPN'"
+        assert layer_type == "RPN", "layer_type must be 'RPN'"
         self.mc_samples = mc_samples
         self.drop_blocks = torch.nn.ModuleList(
             [DropBlock2D(block_size=8, drop_prob=0.5) for i in range(self.mc_samples)]

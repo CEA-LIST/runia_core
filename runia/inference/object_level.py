@@ -111,7 +111,6 @@ class BoxInferenceYolo(InferenceModule):
         Returns:
             Network prediction with updated classes in case of detection of OoD objects.
         """
-        assert isinstance(input_image, list), "input_image must be a list"
         assert len(input_image) == 1, "Only batch 1 is supported"
 
         detected_objects_flag = True

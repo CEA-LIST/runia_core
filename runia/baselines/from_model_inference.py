@@ -47,9 +47,6 @@ def get_mcd_pred_uncertainty_score(
     Returns:
         MCD samples, predictive entropy and mutual information scores
     """
-    assert isinstance(dnn_model, torch.nn.Module), "dnn_model must be a pytorch model"
-    assert isinstance(input_dataloader, DataLoader), "input_dataloader must be a DataLoader"
-    assert isinstance(mcd_nro_samples, int), "mcd_nro_samples must be an integer"
     softmax_fn = torch.nn.Softmax(dim=1)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -102,11 +99,9 @@ def get_predictive_uncertainty_score(
         Predictive uncertainty, mutual information
     """
     # Check correct dimensions
-    assert isinstance(input_samples, Tensor), "input_samples must be a pytorch Tensor"
     assert input_samples.shape[0] % mcd_nro_samples == 0, (
         "Input tensor first dimension must be " "divisible by the mcd_nro_samples"
     )
-    assert isinstance(mcd_nro_samples, int), "mcd_nro_samples must be an integer"
     softmax_fn = torch.nn.Softmax(dim=1)
     # compute softmax output - normalized output:
     img_pred_softmax_mcd_samples_t = softmax_fn(input_samples)
@@ -138,9 +133,6 @@ def get_msp_score(dnn_model: torch.nn.Module, input_dataloader: DataLoader) -> n
     Returns:
         MSP scores
     """
-    assert isinstance(dnn_model, torch.nn.Module), "dnn_model must be a pytorch model"
-    assert isinstance(input_dataloader, DataLoader), "input_dataloader must be a DataLoader"
-
     softmax_fn = torch.nn.Softmax(dim=1)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -174,9 +166,6 @@ def get_energy_score(dnn_model: torch.nn.Module, input_dataloader: DataLoader) -
     Returns:
         Energy scores
     """
-    assert isinstance(dnn_model, torch.nn.Module), "dnn_model must be a pytorch model"
-    assert isinstance(input_dataloader, DataLoader), "input_dataloader must be a DataLoader"
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dl_preds_energy_scores = []
@@ -214,8 +203,6 @@ class MDSPostprocessorFromModelInference:
             num_classes: Number of In-distribution samples
             setup_flag: Whether the postprocessor is already trained
         """
-        assert isinstance(num_classes, int), "num_classes must be an integer"
-        assert isinstance(setup_flag, bool), "setup_flag must be a boolean"
         self.num_classes = num_classes
         self.setup_flag = setup_flag
         self.precision = None
@@ -233,10 +220,6 @@ class MDSPostprocessorFromModelInference:
             layer_hook: Hook to the layer to take samples from
 
         """
-        assert isinstance(dnn_model, torch.nn.Module), "dnn_model must be a pytorch model"
-        assert isinstance(ind_dataloader, DataLoader), "input_dataloader must be a DataLoader"
-        assert isinstance(layer_hook, Hook), "layer_hook must be a Hook"
-
         if not self.setup_flag:
             # estimate mean and variance from training set
             print("\n Estimating mean and variance from training set...")
@@ -291,10 +274,6 @@ class MDSPostprocessorFromModelInference:
         Returns:
             (tuple): Model predictions and confidence scores
         """
-        assert isinstance(dnn_model, torch.nn.Module), "dnn_model must be a pytorch model"
-        assert isinstance(dataloader, DataLoader), "dataloader must be a DataLoader"
-        assert isinstance(layer_hook, Hook), "layer_hook must be a Hook"
-
         all_preds = []
         all_conf_score = []
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -355,8 +334,6 @@ class KNNPostprocessorFromModelInference:
             k: Number of neighbors for calculations
             setup_flag: Whether the postprocessor is already trained
         """
-        assert isinstance(k, int), "K must be an integer"
-        assert isinstance(setup_flag, bool), "setup_flag must be a boolean"
         self.K = k
         self.activation_log = None
         self.setup_flag = setup_flag
@@ -374,10 +351,6 @@ class KNNPostprocessorFromModelInference:
             layer_hook: Hook to the layer to take samples from
 
         """
-        assert isinstance(dnn_model, torch.nn.Module), "dnn_model must be a pytorch model"
-        assert isinstance(ind_dataloader, DataLoader), "ind_dataloader must be a DataLoader"
-        assert isinstance(layer_hook, Hook), "layer_hook must be a Hook"
-
         if not self.setup_flag:
             print("\n Get latent embeddings z from training set...")
             activation_log = []
@@ -416,10 +389,6 @@ class KNNPostprocessorFromModelInference:
         Returns:
             (tuple): Model predictions and confidence scores
         """
-        assert isinstance(dnn_model, torch.nn.Module), "dnn_model must be a pytorch model"
-        assert isinstance(dataloader, DataLoader), "dataloader must be a DataLoader"
-        assert isinstance(layer_hook, Hook), "layer_hook must be a Hook"
-
         all_preds = []
         all_kth_dist_score = []
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -467,9 +436,6 @@ def get_dice_feat_mean_react_percentile(
     Returns:
         Tuple[np.ndarray, float]: The DICE expected values, and the ReAct threshold
     """
-    assert isinstance(dnn_model, torch.nn.Module), "dnn_model must be a pytorch model"
-    assert isinstance(ind_dataloader, DataLoader), "ind_dataloader must be a DataLoader"
-    assert isinstance(react_percentile, int), "react_percentile must be an integer"
     assert 0 < react_percentile < 100, "react_percentile must be greater than 0 and less than 100"
     feat_log = []
     dnn_model.eval()
@@ -527,12 +493,7 @@ class RouteDICE(torch.nn.Linear):
             conv1x1: Whether using a 1x1 conv layer
             info: The previously calculated expected values
         """
-        assert isinstance(in_features, int), "in_features must be an integer"
-        assert isinstance(out_features, int), "out_features must be an integer"
-        assert isinstance(bias, bool), "bias must be a boolean"
-        assert isinstance(p, int), "p must be an integer"
         assert 0 < p < 100, "p must be greater than 0 and less than 100"
-        assert isinstance(conv1x1, bool), "conv1x1 must be a boolean"
         if info is not None:
             assert isinstance(info, np.ndarray), "info must be a numpy array or None"
 

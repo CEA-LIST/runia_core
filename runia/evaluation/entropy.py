@@ -52,12 +52,6 @@ def get_dl_h_z(
     Returns:
         Latent vector multivariate normal entropy $h(Z)$, Latent vector value entropy $h(z_i)$
     """
-    if not isinstance(dl_z_samples, Tensor):
-        assert isinstance(dl_z_samples, np.ndarray), (
-            "dl_z_samples must be a torch Tensor" " or numpy array"
-        )
-    assert isinstance(mcd_samples_nro, int), "mcd_samples_nro must be an integer"
-    assert isinstance(parallel_run, bool), "parallel_run must be a boolean"
     # Get dataloader mvn h(z), from mcd_samples
     if isinstance(dl_z_samples, Tensor):
         z_samples_ls = [i for i in dl_z_samples.split(mcd_samples_nro)]
