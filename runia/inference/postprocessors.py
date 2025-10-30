@@ -40,15 +40,15 @@ __all__ = [
     "postprocessor_input_dict",
 ]
 
+# Accepted input types names
+_VALID_INPUT_TYPES = ("latent_space_means", "features", "logits")
 # Postprocessors registry
 postprocessors_dict: Dict[str, Postprocessor] = {}
 # Postprocessor input registry
 postprocessor_input_dict: Dict[str, List[str]] = {}
 
 
-def register_postprocessor(
-    postprocessor_name: str, postprocessor_input: List[str]
-):
+def register_postprocessor(postprocessor_name: str, postprocessor_input: List[str]):
     """
     Registers a postprocessor for the given postprocessor name. This decorator
     allows associating a list of input names required for the postprocessor and is
@@ -64,6 +64,10 @@ def register_postprocessor(
     """
 
     def decorator(cls):
+        for input_type in postprocessor_input:
+            assert (
+                input_type in _VALID_INPUT_TYPES
+            ), f"Invalid input type {input_type}. Specify at least one of {_VALID_INPUT_TYPES}."
         postprocessors_dict[postprocessor_name] = cls
         postprocessor_input_dict[postprocessor_name] = postprocessor_input
         __all__.append(cls.__name__)
