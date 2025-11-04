@@ -39,7 +39,7 @@ from runia.baselines.from_precalculated import (
     get_baselines_thresholds,
     gmm_fit,
 )
-from tests_architecture import Net
+from .tests_architecture import Net
 
 from runia.feature_extraction import Hook
 from runia.inference import MDLatentSpace, KDELatentSpace
@@ -127,9 +127,11 @@ class TestBaselinesFromPrecalculated(TestCase):
         id_data2 = {"train logits": [], "valid logits": []}
         ood_data2 = {"ood1 logits": []}
         id_res2, ood_res2 = get_labels_from_logits(id_data2.copy(), ood_data2.copy(), ["ood1"])  # type: ignore
-        self.assertEqual(id_res2["train labels"], [])
-        self.assertEqual(id_res2["valid labels"], [])
-        self.assertEqual(ood_res2["ood1 labels"], [])
+        self.assertEqual(len(id_res2["train labels"]), 0)
+        self.assertEqual(len(id_res2["valid labels"]), 0)
+        self.assertEqual(len(ood_res2["ood1 labels"]), 0)
+        self.assertEqual(len(id_res2["valid labels"]), 0)
+        self.assertEqual(len(ood_res2["ood1 labels"]), 0)
 
         # Case 3: unsupported types should raise
         bad_id = {"train logits": [1, 2, 3], "valid logits": [4, 5, 6]}
@@ -203,7 +205,7 @@ class TestBaselinesFromModel(TestCase):
 
         # Define dataset for testing
         self.mnist_data = torchvision.datasets.MNIST(
-            "./mnist-data/",
+            "./tests/mnist-data/",
             train=False,
             download=True,
             transform=torchvision.transforms.Compose(

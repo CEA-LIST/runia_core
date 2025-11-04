@@ -14,7 +14,6 @@ import mlflow
 import matplotlib.pyplot as plt
 import pandas as pd
 from omegaconf import DictConfig
-from pyarrow.lib import optional
 from sklearn.metrics import auc
 import torchmetrics.functional as tmf
 import seaborn as sns
@@ -40,9 +39,9 @@ def get_auroc_results(
     return_results_for_mlflow: bool = False,
 ) -> Union[pd.DataFrame, Tuple[pd.DataFrame, dict]]:
     """
-    Calculates the metrics relevant OoD detection: AUROC, FPR, AUPR, TPR, precision, recall,
+    Calculates the metrics relevant for OoD detection: AUROC, FPR, AUPR, TPR, precision, recall,
     and classification thresholds. Can optionally format results for mlflow logging (no @ allowed).
-    Automatically inverts labels if AUROC<0.5.
+    Automatically inverts labels if AUROC < 0.5.
 
     Args:
         detect_exp_name: Name of the current experiment. This will be of the name of the row
@@ -135,7 +134,7 @@ def save_roc_ood_detector(
     figure to screen
 
     Args:
-        results_table (pd.Dataframe): Dataframe with results as rows and experiments names as
+        results_table (pd.Dataframe): Dataframe with results as rows and experiment names as
             indexes
         postprocessors: List of strings of postprocessors names
         plot_title (str): Title of the plot

@@ -8,7 +8,7 @@ from runia.feature_extraction import (
     apply_dropout,
     Hook,
 )
-from tests_architecture import Net
+from .tests_architecture import Net
 import torch
 import torchvision
 
@@ -33,7 +33,7 @@ class Test(TestCase):
 
         # Define dataset for testing
         self.mnist_data = torchvision.datasets.MNIST(
-            "./mnist-data/",
+            "./tests/mnist-data/",
             train=False,
             download=True,
             transform=torchvision.transforms.Compose(

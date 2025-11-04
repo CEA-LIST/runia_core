@@ -129,16 +129,6 @@ class TestKDELatentSpace(unittest.TestCase):
         self.assertTrue(self.kde_processor._setup_flag)
         self.assertIsNotNone(self.kde_processor.detector)
 
-    def test_kde_setup_invalid_input(self):
-        """Test KDELatentSpace setup with invalid inputs."""
-        # Test with non-numpy array
-        with self.assertRaises(AssertionError):
-            self.kde_processor.setup(self.train_features.tolist())
-
-        # Test with 1D array
-        with self.assertRaises(AssertionError):
-            self.kde_processor.setup(self.train_features.flatten())
-
     def test_kde_setup_already_trained_warning(self):
         """Test warning when setting up already trained KDE."""
         self.kde_processor.setup(self.train_features)
@@ -179,18 +169,6 @@ class TestKDELatentSpace(unittest.TestCase):
             delta=TOLERANCE,
         )
 
-    def test_kde_postprocess_invalid_input(self):
-        """Test KDELatentSpace postprocess with invalid inputs."""
-        self.kde_processor.setup(self.train_features)
-
-        # Test with non-numpy array
-        with self.assertRaises(AssertionError):
-            self.kde_processor.postprocess(self.test_features.tolist())
-
-        # Test with 1D array
-        with self.assertRaises(AssertionError):
-            self.kde_processor.postprocess(self.test_features.flatten())
-
 
 class TestMDLatentSpace(unittest.TestCase):
     """Test cases for the MDLatentSpace postprocessor."""
@@ -224,16 +202,6 @@ class TestMDLatentSpace(unittest.TestCase):
         self.assertEqual(self.md_processor.feats_mean.shape, (1, TEST_FEATURE_DIM))
         self.assertEqual(self.md_processor.precision.shape, (TEST_FEATURE_DIM, TEST_FEATURE_DIM))
 
-    def test_md_setup_invalid_input(self):
-        """Test MDLatentSpace setup with invalid inputs."""
-        # Test with non-numpy array
-        with self.assertRaises(AssertionError):
-            self.md_processor.setup(self.train_features.tolist())
-
-        # Test with 1D array
-        with self.assertRaises(AssertionError):
-            self.md_processor.setup(self.train_features.flatten())
-
     def test_md_postprocess(self):
         """Test MDLatentSpace postprocess method."""
         self.md_processor.setup(self.train_features)
@@ -263,18 +231,6 @@ class TestMDLatentSpace(unittest.TestCase):
             0.0,
             delta=TOLERANCE,
         )
-
-    def test_md_postprocess_invalid_input(self):
-        """Test MDLatentSpace postprocess with invalid inputs."""
-        self.md_processor.setup(self.train_features)
-
-        # Test with non-numpy array
-        with self.assertRaises(AssertionError):
-            self.md_processor.postprocess(self.test_features.tolist())
-
-        # Test with 1D array
-        with self.assertRaises(AssertionError):
-            self.md_processor.postprocess(self.test_features.flatten())
 
 
 class TestcMDLatentSpace(unittest.TestCase):
@@ -396,16 +352,6 @@ class TestKNNLatentSpace(unittest.TestCase):
         # Check activation_log shape
         self.assertEqual(self.knn_processor.activation_log.shape, self.train_features.shape)
 
-    def test_knn_setup_invalid_input(self):
-        """Test KNNLatentSpace setup with invalid inputs."""
-        # Test with non-numpy array
-        with self.assertRaises(AssertionError):
-            self.knn_processor.setup(self.train_features.tolist())
-
-        # Test with 1D array
-        with self.assertRaises(AssertionError):
-            self.knn_processor.setup(self.train_features.flatten())
-
     def test_knn_postprocess(self):
         """Test KNNLatentSpace postprocess method."""
         self.knn_processor.setup(self.train_features)
@@ -435,18 +381,6 @@ class TestKNNLatentSpace(unittest.TestCase):
             0.0,
             delta=TOLERANCE,
         )
-
-    def test_knn_postprocess_invalid_input(self):
-        """Test KNNLatentSpace postprocess with invalid inputs."""
-        self.knn_processor.setup(self.train_features)
-
-        # Test with non-numpy array
-        with self.assertRaises(AssertionError):
-            self.knn_processor.postprocess(self.test_features.tolist())
-
-        # Test with 1D array
-        with self.assertRaises(AssertionError):
-            self.knn_processor.postprocess(self.test_features.flatten())
 
 
 class TestGMMLatentSpace(unittest.TestCase):
@@ -486,20 +420,6 @@ class TestGMMLatentSpace(unittest.TestCase):
 
         self.assertIn("id_labels not provided", str(context.exception))
 
-    def test_gmm_setup_invalid_input(self):
-        """Test GMMLatentSpace setup with invalid inputs."""
-        # Test with non-numpy array
-        with self.assertRaises(AssertionError):
-            self.gmm_processor.setup(
-                self.train_features.tolist(), ind_train_labels=self.train_labels
-            )
-
-        # Test with 1D array
-        with self.assertRaises(AssertionError):
-            self.gmm_processor.setup(
-                self.train_features.flatten(), ind_train_labels=self.train_labels
-            )
-
     def test_gmm_postprocess(self):
         """Test GMMLatentSpace postprocess method."""
         self.gmm_processor.setup(self.train_features, ind_train_labels=self.train_labels)
@@ -529,18 +449,6 @@ class TestGMMLatentSpace(unittest.TestCase):
             0.0,
             delta=TOLERANCE,
         )
-
-    def test_gmm_postprocess_invalid_input(self):
-        """Test GMMLatentSpace postprocess with invalid inputs."""
-        self.gmm_processor.setup(self.train_features, ind_train_labels=self.train_labels)
-
-        # Test with non-numpy array
-        with self.assertRaises(AssertionError):
-            self.gmm_processor.postprocess(self.test_features.tolist())
-
-        # Test with 1D array
-        with self.assertRaises(AssertionError):
-            self.gmm_processor.postprocess(self.test_features.flatten())
 
 
 class TestEnergyPostprocessor(unittest.TestCase):

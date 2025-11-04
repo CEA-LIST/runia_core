@@ -148,35 +148,35 @@ class KDELatentSpace(Postprocessor):
         super().__init__(cfg)
         self.detector = None
 
-    def setup(self, ind_train_feats: np.ndarray, **kwargs) -> None:
+    def setup(self, ind_train_data: np.ndarray, **kwargs) -> None:
         """
         Estimate the Kernel density estimator distribution from a set of data
 
         Args:
-            ind_train_feats: InD features to estimate the distribution
+            ind_train_data: InD features to estimate the distribution
 
         """
-        assert ind_train_feats.ndim == 2, "ind_feats must be 2 dimensional"
+        assert ind_train_data.ndim == 2, "ind_feats must be 2 dimensional"
         if not self._setup_flag:
-            self.detector = DetectorKDE(train_embeddings=ind_train_feats)
+            self.detector = DetectorKDE(train_embeddings=ind_train_data)
             self._setup_flag = True
         else:
             warnings.warn("KDEPostprocessor already trained")
 
-    def postprocess(self, test_feats: np.ndarray, **kwargs) -> np.ndarray:
+    def postprocess(self, test_data: np.ndarray, **kwargs) -> np.ndarray:
         """
         Perform inference with the set-up estimator, i.e. for each sample in the Data Loader
         estimate if it belongs to the InD distribution
 
         Args:
-            test_feats: Features (either InD or OoD) to estimate if they belong to the InD
+            test_data: Features (either InD or OoD) to estimate if they belong to the InD
                 distribution
 
         Returns:
             (tuple): Confidence scores
         """
-        assert test_feats.ndim == 2, "ood_feats must be 2 dimensional"
-        return self.detector.get_density_scores(test_feats)
+        assert test_data.ndim == 2, "ood_feats must be 2 dimensional"
+        return self.detector.get_density_scores(test_data)
 
 
 @register_postprocessor("MD", postprocessor_input=["latent_space_means"])
@@ -200,20 +200,20 @@ class MDLatentSpace(Postprocessor):
         self.precision = None
         self.centered_data = None
 
-    def setup(self, ind_train_feats: np.ndarray, **kwargs) -> None:
+    def setup(self, ind_train_data: np.ndarray, **kwargs) -> None:
         """
         Estimate the parameters of a multivariate normal distribution from a set of data
 
         Args:
-            ind_train_feats: InD features to estimate the distribution
+            ind_train_data: InD features to estimate the distribution
 
         """
-        assert ind_train_feats.ndim == 2, "ind_feats must be 2 dimensional"
+        assert ind_train_data.ndim == 2, "ind_feats must be 2 dimensional"
         if not self._setup_flag:
             # estimate mean and variance from training set
-            self.feats_mean = np.mean(ind_train_feats, 0, keepdims=True)
+            self.feats_mean = np.mean(ind_train_data, 0, keepdims=True)
 
-            self.centered_data = ind_train_feats - self.feats_mean
+            self.centered_data = ind_train_data - self.feats_mean
 
             group_lasso = EmpiricalCovariance(assume_centered=False)
             group_lasso.fit(self.centered_data)
@@ -226,20 +226,20 @@ class MDLatentSpace(Postprocessor):
         else:
             warnings.warn("MDPostprocessor already trained")
 
-    def postprocess(self, test_feats: np.ndarray, **kwargs) -> np.ndarray:
+    def postprocess(self, test_data: np.ndarray, **kwargs) -> np.ndarray:
         """
         Perform inference with the set-up estimator, i.e. for each sample in the Data Loader
         estimate if it belongs to the InD distribution
 
         Args:
-            test_feats: Features (either InD or OoD) to estimate if they belong to the InD
+            test_data: Features (either InD or OoD) to estimate if they belong to the InD
                 distribution
 
         Returns:
             (np.ndarray): Confidence scores
         """
-        assert test_feats.ndim == 2, "test_feats must be 2 dimensional"
-        diff = test_feats - self.feats_mean
+        assert test_data.ndim == 2, "test_feats must be 2 dimensional"
+        diff = test_data - self.feats_mean
         conf_score = -np.diag(np.matmul(np.matmul(diff, self.precision), np.transpose(diff)))
 
         return conf_score
@@ -272,12 +272,12 @@ class cMDLatentSpace(Postprocessor):
         self.precision = None
         self.class_mean = None
 
-    def setup(self, ind_train_feats: np.ndarray, **kwargs) -> None:
+    def setup(self, ind_train_data: np.ndarray, **kwargs) -> None:
         """
         Estimate the parameters of a multivariate normal distribution from a set of data
 
         Args:
-            ind_train_feats: InD features to estimate the distribution
+            ind_train_data: InD features to estimate the distribution
 
         """
         # Get ground truth InD labels
@@ -290,15 +290,15 @@ class cMDLatentSpace(Postprocessor):
                 "id_labels not provided. Pass ID train labels as 'ind_train_labels' argument."
             )
 
-        if isinstance(ind_train_feats, np.ndarray):
-            ind_train_feats = Tensor(ind_train_feats)
-        assert ind_train_feats.ndim == 2, "ind_feats must be 2 dimensional"
+        if isinstance(ind_train_data, np.ndarray):
+            ind_train_data = Tensor(ind_train_data)
+        assert ind_train_data.ndim == 2, "ind_feats must be 2 dimensional"
         if not self._setup_flag:
             # compute class-conditional statistics:
             self.class_mean = []
             centered_data = []
             for c in range(self.num_classes):
-                class_samples = ind_train_feats[ind_train_labels.eq(c)].data
+                class_samples = ind_train_data[ind_train_labels.eq(c)].data
                 if len(class_samples) == 0:
                     warnings.warn(
                         f"No examples for class {c} to build class-wise Mahalanobis Distance score"
@@ -318,13 +318,13 @@ class cMDLatentSpace(Postprocessor):
         else:
             warnings.warn("cMDPostprocessor already trained")
 
-    def postprocess(self, test_feats: np.ndarray, **kwargs) -> np.ndarray:
+    def postprocess(self, test_data: np.ndarray, **kwargs) -> np.ndarray:
         """
         Perform inference with the set-up estimator, i.e. for each sample in the Data Loader
         estimate if it belongs to the InD distribution
 
         Args:
-            test_feats: Features (either InD or OoD) to estimate if they belong to the InD
+            test_data: Features (either InD or OoD) to estimate if they belong to the InD
                 distribution
 
         Returns:
@@ -336,11 +336,11 @@ class cMDLatentSpace(Postprocessor):
                 pred_labels = Tensor(pred_labels)
         except KeyError:
             raise ValueError("pred_logits not provided")
-        if isinstance(test_feats, np.ndarray):
-            test_feats = Tensor(test_feats)
-        assert test_feats.ndim == 2, "test_feats must be 2 dimensional"
+        if isinstance(test_data, np.ndarray):
+            test_data = Tensor(test_data)
+        assert test_data.ndim == 2, "test_feats must be 2 dimensional"
         all_conf_score = []
-        for feat in test_feats:
+        for feat in test_data:
             class_scores = torch.zeros((1, self.num_classes))
             for c in range(self.num_classes):
                 tensor = feat - self.class_mean[c].view(1, -1)
@@ -383,39 +383,39 @@ class KNNLatentSpace(Postprocessor):
         self.activation_log = None
         self.index = None
 
-    def setup(self, ind_train_feats: np.ndarray, **kwargs) -> None:
+    def setup(self, ind_train_data: np.ndarray, **kwargs) -> None:
         """
         Add the precalculated points to a point cloud to build the reference ID distribution.
 
         Args:
-            ind_train_feats: InD features to estimate the distribution
+            ind_train_data: InD features to estimate the distribution
 
         """
-        assert ind_train_feats.ndim == 2, "ind_train_feats must be 2 dimensional"
+        assert ind_train_data.ndim == 2, "ind_train_feats must be 2 dimensional"
         if not self._setup_flag:
-            self.activation_log = np.array([normalizer(feat) for feat in ind_train_feats])
-            self.index = faiss.IndexFlatL2(ind_train_feats.shape[1])
+            self.activation_log = np.array([normalizer(feat) for feat in ind_train_data])
+            self.index = faiss.IndexFlatL2(ind_train_data.shape[1])
             self.index.add(self.activation_log)
             self._setup_flag = True
 
         else:
             warnings.warn("KNNPostprocessor already trained")
 
-    def postprocess(self, test_feats: np.ndarray, **kwargs) -> np.ndarray:
+    def postprocess(self, test_data: np.ndarray, **kwargs) -> np.ndarray:
         """
         Perform inference with the set-up estimator, i.e. for each sample in the Data Loader
         estimate if it belongs to the InD distribution
 
         Args:
-            test_feats: Features (either InD or OoD) to estimate if they belong to the InD
+            test_data: Features (either InD or OoD) to estimate if they belong to the InD
                 distribution
 
         Returns:
             (tuple): Confidence scores
         """
-        assert test_feats.ndim == 2, "test_feats must be 2 dimensional"
+        assert test_data.ndim == 2, "test_feats must be 2 dimensional"
         all_kth_dist_score = []
-        for feat in test_feats:
+        for feat in test_data:
             latent_rep_normed = normalizer(feat.reshape(1, -1))
             D, _ = self.index.search(latent_rep_normed, self.K)
             kth_dist = -D[:, -1]
@@ -448,15 +448,15 @@ class GMMLatentSpace(Postprocessor):
 
         self.gmm = None
 
-    def setup(self, ind_train_feats: np.ndarray, **kwargs) -> None:
+    def setup(self, ind_train_data: np.ndarray, **kwargs) -> None:
         """
         Estimate the parameters of a multivariate normal distribution from a set of data
 
         Args:
-            ind_train_feats: InD features to estimate the distribution
+            ind_train_data: InD features to estimate the distribution
 
         """
-        assert ind_train_feats.ndim == 2, "ind_train_feats must be 2 dimensional"
+        assert ind_train_data.ndim == 2, "ind_train_feats must be 2 dimensional"
         if not self._setup_flag:
             # Get ground truth InD labels
             try:
@@ -466,7 +466,7 @@ class GMMLatentSpace(Postprocessor):
             except KeyError:
                 raise ValueError("id_labels not provided")
             self.gmm, _ = gmm_fit(
-                embeddings=Tensor(ind_train_feats),
+                embeddings=Tensor(ind_train_data),
                 labels=ind_predicted_labels,
                 num_classes=self.num_classes,
             )
@@ -475,20 +475,20 @@ class GMMLatentSpace(Postprocessor):
         else:
             warnings.warn("GMMPostprocessor already trained")
 
-    def postprocess(self, test_feats: np.ndarray, **kwargs) -> np.ndarray:
+    def postprocess(self, test_data: np.ndarray, **kwargs) -> np.ndarray:
         """
         Perform inference with the set-up estimator, i.e. for each sample in the Data Loader
         estimate if it belongs to the InD distribution
 
         Args:
-            test_feats: Features (either InD or OoD) to estimate if they belong to the InD
+            test_data: Features (either InD or OoD) to estimate if they belong to the InD
                 distribution
 
         Returns:
             (tuple): Confidence scores
         """
-        assert test_feats.ndim == 2, "test_feats must be 2 dimensional"
-        log_probs = self.gmm.log_prob(Tensor(test_feats[:, None, :]))
+        assert test_data.ndim == 2, "test_feats must be 2 dimensional"
+        log_probs = self.gmm.log_prob(Tensor(test_data[:, None, :]))
         energy: np.ndarray = logsumexp(log_probs.numpy(), axis=1)
         return energy
 
