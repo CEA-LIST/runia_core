@@ -143,28 +143,6 @@ class TestPostprocessor(unittest.TestCase):
         np.random.seed(SEED)
         logger.info("Setting up TestPostprocessor")
 
-    def test_postprocessor_initialization(self):
-        """Test Postprocessor initialization."""
-        # Test with no config
-        postprocessor = Postprocessor()
-        self.assertFalse(postprocessor._setup_flag)
-
-        # Test with config
-        cfg = DictConfig({"param1": "value1"})
-        postprocessor_with_cfg = Postprocessor(cfg)
-        self.assertFalse(postprocessor_with_cfg._setup_flag)
-
-    def test_postprocessor_abstract_methods(self):
-        """Test that abstract methods raise NotImplementedError."""
-        postprocessor = Postprocessor()
-        test_data = np.random.rand(*TEST_ARRAY_SIZE)
-
-        with self.assertRaises(NotImplementedError):
-            postprocessor.setup(test_data)
-
-        with self.assertRaises(NotImplementedError):
-            postprocessor.postprocess(test_data)
-
     def test_postprocessor_call_method(self):
         """Test Postprocessor __call__ method."""
 

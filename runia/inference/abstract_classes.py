@@ -202,6 +202,12 @@ class OodPostprocessor(Postprocessor):
         )[self.method_name]
         self._setup_flag = True
 
+    def setup(self, ind_train_data: ndarray, **kwargs) -> None:
+        raise NotImplementedError
+
+    def postprocess(self, test_data: ndarray, **kwargs) -> ndarray:
+        raise NotImplementedError
+
 
 ###########################################################################
 # Inference base class

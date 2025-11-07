@@ -347,14 +347,14 @@ class MCDSamplesExtractor(Extractor):
                     # image = image.view(1, 1, 28, 28).to(device)
                     image = image.to(self.device)
                     if self.return_raw_predictions:
-                        latent_samples, raw_preds = self._get_mcd_samples_one_image(
+                        latent_samples, raw_preds = self._get_samples_one_image(
                             image=image, **kwargs
                         )
                         dl_imgs_latent_mcd_samples.append(latent_samples)
                         raw_predictions.extend(raw_preds)
                     else:
                         dl_imgs_latent_mcd_samples.append(
-                            self._get_mcd_samples_one_image(image=image)
+                            self._get_samples_one_image(image=image)
                         )
                     # Update progress bar
                     pbar.update(1)
@@ -365,7 +365,7 @@ class MCDSamplesExtractor(Extractor):
         else:
             return dl_imgs_latent_mcd_samples_t
 
-    def _get_mcd_samples_one_image(self, image, **kwargs) -> Union[Tuple[Tensor, Tensor], Tensor]:
+    def _get_samples_one_image(self, image, **kwargs) -> Union[Tuple[Tensor, Tensor], Tensor]:
         """
         Private method that extracts latent samples from one image, and optionally returns
         raw predictions

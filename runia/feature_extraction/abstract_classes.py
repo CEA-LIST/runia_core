@@ -5,6 +5,7 @@ from dropblock import DropBlock2D
 from torch import Tensor
 from torch.utils.data import DataLoader
 from torchvision.ops import nms
+from abc import ABC, abstractmethod
 
 from runia.feature_extraction.utils import (
     Hook,
@@ -99,7 +100,7 @@ class MCSamplerModule(torch.nn.Module):
         return samples_t
 
 
-class Extractor:
+class Extractor(ABC):
     """
     Handles the extraction of latent space activations and features from a given model for
     various scenarios.
@@ -176,6 +177,7 @@ class Extractor:
         self.dropblock_sizes = dropblock_sizes
         self.dropblock_probs = dropblock_probs
 
+    @abstractmethod
     def get_ls_samples(self, data_loader, **kwargs):
         """
         Fetches labeled samples from the provided data loader using additional parameters.
@@ -200,6 +202,7 @@ class Extractor:
         """
         raise NotImplementedError
 
+    @abstractmethod
     def _get_samples_one_image(self, image, **kwargs):
         """
         Processes a single image to extract samples for further analysis or
