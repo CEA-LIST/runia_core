@@ -8,6 +8,7 @@
 #    Daniel Montoya
 from time import monotonic
 from typing import List, Union, Dict
+from abc import ABC, abstractmethod
 
 import torch
 from numpy import ndarray
@@ -53,7 +54,7 @@ def record_time(function):
 ###########################################################################
 # Post-processor base classes
 ###########################################################################
-class Postprocessor:
+class Postprocessor(ABC):
     """
     A base class for implementing post-hoc OOD detection workflows.
 
@@ -78,6 +79,7 @@ class Postprocessor:
         """
         self._setup_flag = False
 
+    @abstractmethod
     def setup(self, ind_train_data: ndarray, **kwargs) -> None:
         """
         Sets up the necessary configurations or operations for the current instance
@@ -91,6 +93,7 @@ class Postprocessor:
         """
         raise NotImplementedError
 
+    @abstractmethod
     def postprocess(self, test_data: ndarray, **kwargs) -> ndarray:
         """
         Post-processes the test data based on specific implementation. This method is intended
