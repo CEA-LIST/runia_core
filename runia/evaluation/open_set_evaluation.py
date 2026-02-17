@@ -395,6 +395,15 @@ class OpenSetEvaluator:
         results_2d["AOSE"] = total_num_unk_det_as_known[50]
         if num_unk > 0:
             results_2d["nOSE"] = round(total_num_unk_det_as_known[50] * 100 / num_unk, 3)
+            # Get error counts
+            if is_ood:
+                total_fp_ood = 0
+                for cls in tp_plus_fp_cs[50]:
+                    if cls is not None and len(cls) > 0:
+                        total_fp_ood += cls.max()
+                # Error of detecting an unlabeled section as a known class
+                results_2d["E_BK"] = total_fp_ood - total_num_unk_det_as_known[50]
+
         else:
             results_2d["nOSE"] = 0.0
 
@@ -815,17 +824,32 @@ def evaluate_open_set_detection_one_method(
     evaluator = OpenSetEvaluator(id_dataset_name, id_gt_annotations_path, metric_2007=metric_2007)
     evaluator.reset()
     for im_id, im_pred in predictions_dict.items():
-        if len(im_pred["boxes"]) > 0:
-            labels, scores = get_labels_and_scores_from_logits(im_pred["logits"])
-            boxes = get_boxes_from_precalculated(im_pred["boxes"])
-            if not is_open_set_model:
-                # Postprocess according to score and threshold
-                unk_boxes = np.where(predictions_dict[im_id][method_name] < threshold)
-            else:
-                unk_boxes = np.where(labels == unk_class_number)
-            labels[unk_boxes] = evaluator.unknown_class_index
-            # Add results to evaluator
-            evaluator.process(im_id, boxes, scores, labels)
+        # If using ID val subset, process only if in the used subset
+        if using_subset and im_id in using_subset:
+            if len(im_pred["boxes"]) > 0:
+                labels, scores = get_labels_and_scores_from_logits(im_pred["logits"])
+                boxes = get_boxes_from_precalculated(im_pred["boxes"])
+                if not is_open_set_model:
+                    # Postprocess according to score and threshold
+                    unk_boxes = np.where(np.array(predictions_dict[im_id][method_name]) < threshold)
+                else:
+                    unk_boxes = np.where(labels == unk_class_number)
+                labels[unk_boxes] = evaluator.unknown_class_index
+                # Add results to evaluator
+                evaluator.process(im_id, boxes, scores, labels)
+        # Otherwise process all
+        elif not using_subset:
+            if len(im_pred["boxes"]) > 0:
+                labels, scores = get_labels_and_scores_from_logits(im_pred["logits"])
+                boxes = get_boxes_from_precalculated(im_pred["boxes"])
+                if not is_open_set_model:
+                    # Postprocess according to score and threshold
+                    unk_boxes = np.where(np.array(predictions_dict[im_id][method_name]) < threshold)
+                else:
+                    unk_boxes = np.where(labels == unk_class_number)
+                labels[unk_boxes] = evaluator.unknown_class_index
+                # Add results to evaluator
+                evaluator.process(im_id, boxes, scores, labels)
     evaluation_results = evaluator.evaluate(
         test_gt_annotations_path,
         is_ood=evaluating_ood,

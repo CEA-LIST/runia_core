@@ -199,7 +199,7 @@ def associate_precalculated_baselines_with_raw_predictions(
     baselines_names: List[str],
     non_empty_ids: List[str],
     is_ood: bool,
-):
+) -> Dict[str, Dict[str, torch.Tensor]]:
     """
     Associates precomputed baseline results with raw predictions for a given dataset. Function
     most useful when dealing with object-level OOD detection and OSOD benchmark.

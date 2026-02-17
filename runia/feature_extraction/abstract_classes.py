@@ -19,6 +19,7 @@ SUPPORTED_OBJECT_DETECTION_ARCHITECTURES = [
     "owlv2",
     "rtdetr-backbone",
     "rtdetr-encoder",
+    "dino"
 ]
 
 __all__ = [
@@ -383,6 +384,15 @@ class ObjectDetectionExtractor(Extractor):
             )
             impath = [loader_contents["labels"][0]["image_id"]]
             im_id = impath[0]
+        elif self.architecture == "dino":
+            image = (
+                loader_contents["pixel_values"].to(self.device),
+                loader_contents["attention_mask"].to(self.device),
+                loader_contents["orig_size"],
+                loader_contents["input_ids"].to(self.device),
+            )
+            impath = [loader_contents["labels"][0]["image_id"]]
+            im_id = impath[0]
         # DETR or RTDETR
         else:
             image = (
@@ -469,6 +479,20 @@ class ObjectDetectionExtractor(Extractor):
                 attention_mask=image[1],
                 pixel_values=image[2],
                 orig_sizes=image[3],
+                threshold=predict_conf,
+            )[
+                0
+            ]  # Batch size 1, therefore just one image
+            boxes = pred_img["boxes"]
+            results["features"] = pred_img["last_hidden"]
+            results["logits"] = pred_img["logits"]
+        elif self.architecture == "dino":
+            img_shape = image[2][0]
+            pred_img = self.model.forward_and_postprocess(
+                pixel_values=image[0],
+                attention_mask=image[1],
+                orig_sizes=image[2],
+                input_ids=image[3],
                 threshold=predict_conf,
             )[
                 0
@@ -570,6 +594,8 @@ class ObjectDetectionExtractor(Extractor):
                     ),
                 )
             ]
+        if self.architecture == "dino":
+            latent_sample = [latent_sample[0][1][2]]
         if self.architecture == "rtdetr-encoder":
             latent_sample = [
                 latent_sample[0][0].permute(0, 2, 1).reshape(-1, 256, 20, 20).contiguous()

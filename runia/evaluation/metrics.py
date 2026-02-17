@@ -17,6 +17,7 @@ from omegaconf import DictConfig
 from sklearn.metrics import auc
 import torchmetrics.functional as tmf
 import seaborn as sns
+from collections import defaultdict
 
 from runia.inference.postprocessors import postprocessors_dict
 
@@ -515,12 +516,23 @@ def subset_boxes(
         "valid latent_space_means" in ind_dict.keys()
         and ind_dict["valid latent_space_means"].shape[0] > ood_limit
     ):
+        non_emp_test = defaultdict(int)
+        for im_id in non_empty_predictions_id["valid"]:
+            non_emp_test[im_id] += 1
+        avg_obj_per_id_img = int(ind_dict["valid latent_space_means"].shape[0] / len(non_emp_test))
+        choice_test = np.random.choice(list(non_emp_test.keys()), size=int(ood_limit/avg_obj_per_id_img), replace=False)
+        chosen_idx_valid = []
+        choice_test = np.delete(choice_test, np.where(choice_test == "default_factory"))
+        for i, idx in enumerate(non_empty_predictions_id["valid"]):
+            # chosen_idx_valid.extend([idx] * non_emp_test[int(idx)])
+            if idx in choice_test:
+                chosen_idx_valid.append(i)
         print(
-            f"Subsetting valid set to {ood_limit} from {ind_dict['valid latent_space_means'].shape[0]} extracted boxes"
+            f"Subsetting valid set to {len(chosen_idx_valid)} from {ind_dict['valid latent_space_means'].shape[0]} extracted boxes"
         )
-        chosen_idx_valid = np.random.choice(
-            ind_dict["valid latent_space_means"].shape[0], size=ood_limit, replace=False
-        )
+        # chosen_idx_valid = np.random.choice(
+        #     ind_dict["valid latent_space_means"].shape[0], size=ood_limit, replace=False
+        # )
         ind_dict["valid latent_space_means"] = ind_dict["valid latent_space_means"][
             chosen_idx_valid
         ]

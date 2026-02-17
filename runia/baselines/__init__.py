@@ -73,6 +73,11 @@ baseline_name_dict = {
         "x_axis": "DDU score",
         "plot_name": "ddu_score",
     },
+    "raw": {
+        "plot_title": "Raw predictions",
+        "x_axis": "Raw predictions",
+        "plot_name": "raw_predictions",
+    }
 }
 
 

@@ -542,6 +542,39 @@ def get_msp_score_from_logits(
     return ind_data_dict, ood_baselines_dict
 
 
+def get_raw_score_from_logits(
+    ind_data_dict: Dict[str, np.ndarray],
+    ood_data_dict: Dict[str, np.ndarray],
+    ood_names: List[str],
+    ood_baselines_dict: Dict[str, np.ndarray],
+) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+    """Compute raw predictions without postprocessing for OOD detection.
+
+    Analog to msp, except the threshold is set to 1.0 so that no OOD correction is done
+
+    Args:
+        ind_data_dict: Dictionary with InD data arrays. Expected key "valid logits".
+        ood_data_dict: Dictionary with OoD data arrays. Each OoD dataset should
+            provide a "{ood_name} logits" entry.
+        ood_names: List of OoD dataset names present in `ood_data_dict`.
+        ood_baselines_dict: Dictionary that will be populated with computed OoD
+            baseline scores (keyed by "{ood_name} msp").
+
+    Returns:
+        Tuple of (updated ind_data_dict, updated ood_baselines_dict) where the
+        InD dictionary receives a "raw" entry and the OoD baselines dictionary
+        receives entries for each OoD dataset under the key "{ood_name} raw".
+    """
+    print("Calculating raw score")
+    ind_valid_msp = np.max(softmax(ind_data_dict["valid logits"], axis=1), axis=1)
+    ind_data_dict["raw"] = ind_valid_msp
+    for ood_name in ood_names:
+        ood_msp = np.max(softmax(ood_data_dict[f"{ood_name} logits"], axis=1), axis=1)
+        ood_baselines_dict[f"{ood_name} raw"] = ood_msp
+
+    return ind_data_dict, ood_baselines_dict
+
+
 def get_energy_score_from_logits(
     ind_data_dict: Dict[str, np.ndarray],
     ood_data_dict: Dict[str, np.ndarray],
@@ -1014,11 +1047,16 @@ def get_baselines_thresholds(
     """
     thresholds = {}
     for baseline_name in baselines_names:
-        # Force numeric scalars
-        mean = float(np.mean(baselines_scores_dict[baseline_name]))
-        std = float(np.std(baselines_scores_dict[baseline_name]))
-        # We suppose higher is ID, then 95% of ID scores should be above the threshold
-        thresholds[baseline_name] = mean - (z_score_percentile * std)
+        # Raw means no postprocessing; therefore, the threshold is zero so that no prediction gets corrected.
+        # This is useful for calculating base model statistics on open set benchmarks
+        if baseline_name == "raw":
+            thresholds[baseline_name] = 0.0
+        else:
+            # Force numeric scalars
+            mean = float(np.mean(baselines_scores_dict[baseline_name]))
+            std = float(np.std(baselines_scores_dict[baseline_name]))
+            # We suppose higher is ID, then 95% of ID scores should be above the threshold
+            thresholds[baseline_name] = mean - (z_score_percentile * std)
     return thresholds
 
 
@@ -1069,6 +1107,13 @@ def calculate_all_baselines(
         )
     if "msp" in baselines_names:
         ind_data_dict, ood_baselines_scores_dict = get_msp_score_from_logits(
+            ind_data_dict=ind_data_dict,
+            ood_data_dict=ood_data_dict,
+            ood_names=cfg.ood_datasets,
+            ood_baselines_dict=ood_baselines_scores_dict,
+        )
+    if "raw" in baselines_names:
+        ind_data_dict, ood_baselines_scores_dict = get_raw_score_from_logits(
             ind_data_dict=ind_data_dict,
             ood_data_dict=ood_data_dict,
             ood_names=cfg.ood_datasets,
