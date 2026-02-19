@@ -81,11 +81,19 @@ pip install -r requirements.txt
 pip install .
 ```
 
+### Using uv
+See [uv documentation](https://docs.astral.sh/uv/) for installation instructions. Dependencies are installed on first run. 
+Therefore, you can run any script with:
+
+```bash
+# Directly run any script (dependencies are installed on first run)
+uv run your_script.py
+```
 ---
 
 ## Quick Start
 
-### Computer Vision OoD Detection
+### Computer Vision OoD Detection with Latent Space Methods LaREx
 
 ```python
 import torch
@@ -122,7 +130,7 @@ inference_module = LaRExInference(
 prediction, confidence_score = inference_module.get_score(test_image, layer_hook=hooked_layer)
 ```
 
-### LLM Uncertainty Estimation
+### LLM Uncertainty Estimation (White-box methods)
 
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
@@ -167,110 +175,201 @@ generated_text, scores = compute_uncertainties(
 |------|-------------------|----------------|---------------|
 | **Hallucination Detection** | SQuADv2 | TriviaQA, Natural Questions, HotpotQA | Llama-3.1, DistilBERT-base |
 
-**Note**: For computer vision tasks, models should include dropout or DropBlock2D layers to enable Monte Carlo Dropout sampling for epistemic uncertainty estimation.
+**Note**: For epistemic uncertainty estimation in computer vision tasks, models should include dropout or DropBlock2D layers to enable Monte Carlo Dropout sampling.
+However, RunIA can be used with any architecture by hooking any latent layer and extracting features for OoD detection with LaRED/LaREM, without the need for MC sampling. 
+In this case, the latent space methods will be applied on the extracted features instead of the entropy from MC samples.
 
 ---
 
 ## Usage Examples
 
-### Computer Vision: OoD Detection
+### Computer Vision: OoD Detection in Object Detection
 
 #### 1. Evaluation Pipeline
 
-Evaluate uncertainty estimation methods on In-Distribution (InD) vs Out-of-Distribution (OoD) datasets:
+Evaluate OOD detection methods on In-Distribution (InD) vs Out-of-Distribution (OoD) datasets in Object Detection.
+The library is focused on latent space methods but can compute 10+ other methods (MSP, Energy, Mahalanobis, kNN, ViM, DDU, DICE, ReAct, etc.):
 
 ```python
 import torch
-from runia.evaluation import Hook, get_latent_representation_mcd_samples, apply_dropout, get_dl_h_z
-from runia.evaluation.metrics import log_evaluate_lared_larem
+from omegaconf import OmegaConf
+from runia.feature_extraction import Hook, BoxFeaturesExtractor, get_aggregated_data_dict, associate_precalculated_baselines_with_raw_predictions
+from runia.evaluation import log_evaluate_larex
+from runia.baselines import calculate_all_baselines, remove_latent_features, get_baselines_thresholds
 
 # Setup
-N_MCD_SAMPLES = 16
+BASELINES_NAMES = ["msp", "gen", "energy", "mdist", "knn", "ddu"]
+LATENT_SPACE_POSTPROCESSORS = ["MD"]
+cfg = OmegaConf.create({"ood_datasets": ['ood_dataset_name']})
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Load model and hook dropout/dropblock layer
 model = YourModel.load_from_checkpoint("model.pt")
-hooked_layer = Hook(model.dropout_layer)
+hooked_layers = [Hook(model.my_latent_layer)]
 model.to(device).eval()
-model.apply(apply_dropout)
 
-# Extract MC samples for InD and OoD data
-latent_ind_train = get_latent_representation_mcd_samples(
-    model, ind_train_loader, N_MCD_SAMPLES, hooked_layer
-)
-latent_ind_test = get_latent_representation_mcd_samples(
-    model, ind_test_loader, N_MCD_SAMPLES, hooked_layer
-)
-latent_ood_test = get_latent_representation_mcd_samples(
-    model, ood_test_loader, N_MCD_SAMPLES, hooked_layer
+# Instantiate BoxFeaturesExtractor for object detection architectures (e.g., Faster RCNN, YOLOv8, RT-DETR, Deformable DETR, OWLv2)
+samples_extractor = BoxFeaturesExtractor(
+    model=model,
+    hooked_layers=hooked_layers,
+    device=device,
+    roi_output_sizes=[16],
+    roi_sampling_ratio=-1,
+    return_raw_predictions=False,
+    return_stds=False,
+    hook_layer_output=True,
+    architecture="rcnn"
 )
 
-# Compute entropy from MC samples
-_, entropy_ind_train = get_dl_h_z(latent_ind_train, mcd_samples_nro=N_MCD_SAMPLES)
-_, entropy_ind_test = get_dl_h_z(latent_ind_test, mcd_samples_nro=N_MCD_SAMPLES)
-_, entropy_ood_test = get_dl_h_z(latent_ood_test, mcd_samples_nro=N_MCD_SAMPLES)
+# Extract latent samples and features for InD and OoD datasets
+ind_data_dict = {
+  "train": samples_extractor.get_ls_samples(ind_train_data_loader, predict_conf=0.5),
+  "valid": samples_extractor.get_ls_samples(ind_val_data_loader, predict_conf=0.5)
+}
+aggregated_ind_data_dict = dict()
+# Track images with no objects found from varying the confidence of predictions
+ind_no_obj = dict()
+non_empty_preds_ind_im_ids = dict()
 
-# Evaluate LaRED and LaREM (returns metrics: AUROC, AUPR, FPR@95)
-ood_datasets = {'ood_dataset_name': entropy_ood_test}
-metrics_df = log_evaluate_lared_larem(
-    ind_train=entropy_ind_train,
-    ind_test=entropy_ind_test,
-    ood_dict=ood_datasets
+ood_data_dict = {"ood_dataset_name": samples_extractor.get_ls_samples(ood_data_loader, predict_conf=0.5)} 
+aggregated_ood_data_dict = dict()
+non_empty_preds_ood_im_ids = dict()
+ood_no_obj = dict()
+
+# Preprocess ID datasets and aggregate data in the format required for evaluation (one entry per image with aggregated features from all predicted boxes)
+for split in ind_data_dict:    
+    aggregated_ind_data_dict, ind_no_obj, non_empty_preds_ind_im_ids = get_aggregated_data_dict(
+        data_dict=ind_data_dict,
+        dataset_name=split,
+        aggregated_data_dict=aggregated_ind_data_dict,
+        no_obj_dict=ind_no_obj,
+        non_empty_predictions_ids=non_empty_preds_ind_im_ids,
+        probs_as_logits=False
+    )
+
+# Preprocess OOD datasets and aggregate data in the format required for evaluation
+for ood_dataset_name in cfg.ood_datasets:
+    aggregated_ood_data_dict, ood_no_obj, non_empty_preds_ood_im_ids = get_aggregated_data_dict(
+        data_dict=ood_data_dict,
+        dataset_name=ood_dataset_name,
+        aggregated_data_dict=aggregated_ood_data_dict,
+        no_obj_dict=ood_no_obj,
+        non_empty_predictions_ids=non_empty_preds_ood_im_ids,
+        probs_as_logits=False
+    )
+    
+aggregated_ind_data_dict, aggregated_ood_data_dict, ood_baselines_scores_dict = calculate_all_baselines(
+    baselines_names=BASELINES_NAMES,
+    ind_data_dict=aggregated_ind_data_dict,
+    ood_data_dict=aggregated_ood_data_dict,
+    fc_params=None,
+    cfg=cfg,
+    num_classes=10 if cfg.ind_dataset == "bdd" else 20
+)
+
+aggregated_ind_data_dict, aggregated_ood_data_dict = remove_latent_features(
+    id_data=aggregated_ind_data_dict,
+    ood_data=aggregated_ood_data_dict,
+    ood_names=cfg.ood_datasets
+)
+baselines_thresholds = get_baselines_thresholds(
+    baselines_names=BASELINES_NAMES,
+    baselines_scores_dict=aggregated_ind_data_dict,
+    z_score_percentile=cfg.z_score_thresholds
+)
+
+# Associate calculated baselines scores with raw predictions dicts
+# OOD
+for ood_dataset_name in cfg.ood_datasets:
+    ood_data_dict[ood_dataset_name] = associate_precalculated_baselines_with_raw_predictions(
+        data_dict=ood_data_dict[ood_dataset_name],
+        dataset_name=ood_dataset_name,
+        ood_baselines_dict=ood_baselines_scores_dict,
+        baselines_names=BASELINES_NAMES,
+        non_empty_ids=non_empty_preds_ood_im_ids[ood_dataset_name],
+        is_ood=True
+    )
+# InD
+ind_data_dict["valid"] = associate_precalculated_baselines_with_raw_predictions(
+    data_dict=ind_data_dict["valid"],
+    dataset_name="valid",
+    ood_baselines_dict=aggregated_ind_data_dict,
+    baselines_names=BASELINES_NAMES,
+    non_empty_ids=non_empty_preds_ind_im_ids["valid"],
+    is_ood=False
+)
+    
+metrics_df, best_postprocessors_dict, postprocessor_thresholds, aggregated_ood_data_dict = log_evaluate_larex(
+    cfg=cfg,
+    baselines_names=BASELINES_NAMES,
+    ind_data_dict=aggregated_ind_data_dict,
+    ood_data_dict=aggregated_ood_data_dict,
+    ood_baselines_scores=ood_baselines_scores_dict,
+    mlflow_run_name="my_run_name",
+    mlflow_logging=False,
+    visualize_score=LATENT_SPACE_POSTPROCESSORS[0],
+    postprocessors=LATENT_SPACE_POSTPROCESSORS,
 )
 print(metrics_df)
 ```
 
 #### 2. Inference Pipeline
 
-Deploy OoD detection in production:
+Deploy OoD detection in production with the inference module, using the best postprocessor from evaluation (e.g., LaREM or LaRED) or any other method from the evaluation pipeline by setting the appropriate confidence threshold for predictions to be considered in inference (can be tuned based on evaluation results):
 
 ```python
 import torch
-import numpy as np
-from PIL import Image
-from torchvision import transforms
-from runia.evaluation import Hook
-from runia.inference import LaRExInference, MCSamplerModule, LaREMPostprocessor
-from runia import apply_pca_ds_split
+from runia.feature_extraction import get_aggregated_data_dict
+from runia.inference import postprocessors_dict, ObjectLevelInference, postprocessor_input_dict
+
+METHOD = "energy"  # or "MD" for LaREM, "KDE" for LaRED, or any other method from the evaluation pipeline
+LATENT_SPACE_METHOD=False  # Set to True if using latent space postprocessors (LaREM or LaRED), False for other methods
+INFERENCE_THRESHOLD = 0.5  # Set the confidence threshold for predictions to be considered in inference (can be tuned based on evaluation results)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# Load pre-calculated latent space activations, features or logits for InD datasets
+# Extracted using the BoxFeaturesExtractor or any other method and saved in the required format for evaluation and inference
+# InD
+ind_data_splits = ["train", "valid"]
+ind_data_dict = dict()
+aggregated_ind_data_dict = dict()
+non_empty_preds_ind_im_ids = dict()
+# Track images with no objects found from varying the confidence of predictions
+ind_no_obj = dict()
+for split in ind_data_splits:
+    ind_file_name = f"my/file/name_{split}.pt"
+    # Load InD latent space activations
+    ind_data_dict[f"{split}"] = torch.load(ind_file_name, map_location=device)
+    aggregated_ind_data_dict, ind_no_obj, non_empty_preds_ind_im_ids = get_aggregated_data_dict(
+        data_dict=ind_data_dict,
+        dataset_name=split,
+        aggregated_data_dict=aggregated_ind_data_dict,
+        no_obj_dict=ind_no_obj,
+        non_empty_predictions_ids=non_empty_preds_ind_im_ids,
+        probs_as_logits=False
+    )
+
+postprocessor = postprocessors_dict[METHOD](method_name=METHOD, flip_sign=False)
+postprocessor.setup(ind_train_data=aggregated_ind_data_dict["valid logits"])
 
 # Load model
 model = YourModel.load_from_checkpoint("model.pt")
-hooked_layer = Hook(model.dropout_layer)
-model.eval()
+hooked_layers = []  # Specify the layers to hook for feature extraction if using latent space methods (e.g., LaREM or LaRED), otherwise can be left empty for other methods that do not require feature extraction
 
-# Load pre-calculated InD entropies
-entropy_train = np.load("ind_train_entropies.npy")
-entropy_test = np.load("ind_test_entropies.npy")
-
-# Apply PCA (recommended: 256 components for LaREM)
-pca_train, pca_transform = apply_pca_ds_split(entropy_train, nro_components=256)
-
-# Setup LaREM detector
-detector = LaREMPostprocessor()
-detector.setup(pca_train)
-
-# Calculate threshold (95% confidence)
-test_scores = detector.postprocess(pca_transform.transform(entropy_test))
-threshold = np.mean(test_scores) - (1.645 * np.std(test_scores))
-
-# Setup inference module
-inference = LaRExInference(
-    dnn_model=model,
-    detector=detector,
-    mcd_sampler=MCSamplerModule,
-    pca_transform=pca_transform,
-    mcd_samples_nro=16,
-    layer_type="Conv"
+inference_module = ObjectLevelInference(
+    model=model,
+    postprocessor=postprocessor,
+    architecture="RTDETR",  # or "rcnn", "yolo", "deformable_detr", "owlv2"
+    latent_space_method=LATENT_SPACE_METHOD,
+    postprocessor_input=postprocessor_input_dict[METHOD] if not LATENT_SPACE_METHOD else ["latent_space_means"],
+    hooked_layers=hooked_layers,
+    roi_output_sizes=[16],
 )
 
-# Run inference on new image
-image = Image.open("test_image.jpg")
-tensor_image = transforms.ToTensor()(image).unsqueeze(0)
-prediction, ood_score = inference.get_score(tensor_image, layer_hook=hooked_layer)
-
-print(f"Prediction: {prediction}")
-print(f"OoD Score: {ood_score:.4f}")
-print(f"Is InD: {ood_score > threshold}")
+with torch.no_grad():
+    # Perform inference on new images
+    for idx, input_im in enumerate(my_data_loader):
+        predictions, scores = inference_module.get_score(input_im, predict_conf=INFERENCE_THRESHOLD)
 ```
 
 #### 3. Using Baseline Methods
@@ -384,18 +483,8 @@ print(f"Uncertainty Scores: {scores}")
 
 ### Publications
 
-- **Out-of-Distribution Detection using Deep Neural Network Latent Space**
+- [Latent representation entropy density for distribution shift detection](https://hal.science/hal-04674980v1/file/417_latent_representation_entropy_.pdf)
 
-### Technical Reports
-
-- EC3-FA06 Run-Time Monitoring
-- EC3-FA18 Run-Time Monitoring
-
-### Confiance AI Documentation
-
-- [Methodological guidelines](https://irtsystemx.sharepoint.com/:b:/s/IAdeConfiance833/ERYc5y-HkPdAvL0TVAQdp0kBkfsPhJwrXrfZrVsH8CuY8Q?e=1mpavP)
-- [Benchmarks](https://irtsystemx.sharepoint.com/:b:/s/IAdeConfiance833/EfaV2zJlJ9VOqMHSr9sk1JIBvXl3CjQGRzHzwAtO_SXiHQ?e=AbUAiM)
-- [Use Case application: Valeo - Scene Understanding](https://irtsystemx.sharepoint.com/:b:/s/IAdeConfiance833/EZKRyjRiobZLm58OoerTgTYB9o_PjyuPpVY7PXFb_v0_hg?e=cWNHdI)
 
 ---
 
