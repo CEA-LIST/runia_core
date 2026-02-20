@@ -10,11 +10,11 @@ from time import monotonic
 from typing import List, Union, Dict
 from abc import ABC, abstractmethod
 
+import numpy as np
 import torch
 from numpy import ndarray
 from omegaconf import DictConfig
 
-from runia.baselines.from_precalculated import get_baselines_thresholds
 from runia.feature_extraction.utils import Hook
 
 __all__ = [
@@ -24,6 +24,7 @@ __all__ = [
     "InferenceModule",
     "ProbabilisticInferenceModule",
     "ObjectDetectionInference",
+    "get_baselines_thresholds"
 ]
 
 
@@ -369,3 +370,39 @@ class ObjectDetectionInference(InferenceModule):
         self.rcnn_extraction_type = rcnn_extraction_type
         self.hooked_layers = hooked_layers
         self.pca_transform = pca_transform
+
+
+def get_baselines_thresholds(
+    baselines_names: List[str],
+    baselines_scores_dict: Dict[str, np.ndarray],
+    z_score_percentile: float = 1.645,
+) -> Dict[str, float]:
+    """Compute thresholds for baselines using a z-score-like percentile.
+
+    For each baseline name provided, the function computes mean and standard
+    deviation of the corresponding scores and returns a threshold defined as
+    mean - z_score_percentile * std (useful when higher scores indicate InD).
+
+    Args:
+        baselines_names: List of baseline keys to compute thresholds for.
+        baselines_scores_dict: Dictionary mapping baseline keys to numpy arrays
+            with per-sample scores.
+        z_score_percentile: Scalar multiplier corresponding to z-score cutoff
+            (default 1.645 approximates the one-sided 95% quantile).
+
+    Returns:
+        Dictionary mapping baseline name to threshold float.
+    """
+    thresholds = {}
+    for baseline_name in baselines_names:
+        # Raw means no postprocessing; therefore, the threshold is zero so that no prediction gets corrected.
+        # This is useful for calculating base model statistics on open set benchmarks
+        if baseline_name == "raw":
+            thresholds[baseline_name] = 0.0
+        else:
+            # Force numeric scalars
+            mean = float(np.mean(baselines_scores_dict[baseline_name]))
+            std = float(np.std(baselines_scores_dict[baseline_name]))
+            # We suppose higher is ID, then 95% of ID scores should be above the threshold
+            thresholds[baseline_name] = mean - (z_score_percentile * std)
+    return thresholds

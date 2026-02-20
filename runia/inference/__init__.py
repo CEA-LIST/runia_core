@@ -4,14 +4,17 @@ from . import abstract_classes
 from . import object_level
 from . import image_level
 from . import postprocessors
+from . import funcs
 
 from .abstract_classes import *
 from .object_level import *
 from .image_level import *
 from .postprocessors import *
+from .funcs import *
 
 __all__ = []
 __all__ += abstract_classes.__all__
 __all__ += object_level.__all__
 __all__ += image_level.__all__
 __all__ += postprocessors.__all__
+__all__ += funcs.__all__

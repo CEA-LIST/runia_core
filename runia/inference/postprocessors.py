@@ -19,21 +19,20 @@ from sklearn.covariance import EmpiricalCovariance
 from sklearn.neighbors import KernelDensity
 from torch import Tensor
 
-from runia.baselines.from_model_inference import (
-    normalizer,
-    RouteDICE,
-)
-from runia.baselines.from_precalculated import (
+from runia.inference.funcs import (
     mahalanobis_preprocess,
     mahalanobis_postprocess,
     gmm_fit,
     generalized_entropy,
     ash_s_linear_layer,
+    RouteDICE,
+    normalizer,
 )
 from runia.inference.abstract_classes import (
     Postprocessor,
     OodPostprocessor,
 )
+
 
 __all__ = [
     "postprocessors_dict",
@@ -1208,18 +1207,15 @@ class DICE(OodPostprocessor):
             **kwargs: Additional keyword arguments required for setup. Must include:
                 - "final_linear_layer_params": Dictionary containing the "weight"
                   and "bias" of the final linear layer in the model.
-                - "train_logits": Training logits to determine the number of output classes.
                 - "valid_feats": Validation dataset features for threshold computation.
 
         Raises:
             AssertionError: If "final_linear_layer_params" is not provided in kwargs.
-            AssertionError: If "train_logits" is not provided in kwargs.
             AssertionError: If "valid_feats" is not provided in kwargs.
         """
         assert (
             "final_linear_layer_params" in kwargs
         ), "final_linear_layer_params must be provided for DICE"
-        assert "train_logits" in kwargs, "train_logits must be provided for DICE"
         assert "valid_feats" in kwargs, "valid_feats must be provided for DICE"
 
         w, b = (
@@ -1239,7 +1235,7 @@ class DICE(OodPostprocessor):
         # Instantiate RouteDICE layer
         self.dice_layer = RouteDICE(
             in_features=ind_train_data.shape[1],
-            out_features=kwargs["train_logits"].shape[1],
+            out_features=self.num_classes,
             bias=True,
             p=self.dice_percentile,
             info=dice_info,

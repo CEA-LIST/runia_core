@@ -7,8 +7,6 @@
 #    Based on https://github.com/fregu856/deeplabv3
 #    Fabio Arnez, probabilistic adaptation
 #    Daniel Montoya
-import warnings
-
 import faiss
 import torch
 from omegaconf import DictConfig
@@ -17,18 +15,23 @@ from scipy.special import logsumexp, softmax
 from torch import Tensor
 from typing import Tuple, Dict, List, Union
 import numpy as np
-from runia.baselines.from_model_inference import (
-    RouteDICE,
+from runia.inference.funcs import (
     normalizer,
+    RouteDICE,
+    ash_s_linear_layer,
+    generalized_entropy,
+    mahalanobis_preprocess,
+    mahalanobis_postprocess,
+    gmm_fit
 )
+from runia.inference.postprocessors import DICE
+
 
 __all__ = [
     "remove_latent_features",
-    "get_baselines_thresholds",
     "calculate_all_baselines",
-    "generalized_entropy",
     "get_labels_from_logits",
-    "gmm_fit",
+    "baseline_name_dict"
 ]
 
 
@@ -65,41 +68,26 @@ def get_dice_score_from_features(
     """
 
     print("Calculating DICE score")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if isinstance(fc_params["weight"], np.ndarray) or isinstance(fc_params["bias"], np.ndarray):
-        params_tensor = {"weight": Tensor(fc_params["weight"]), "bias": Tensor(fc_params["bias"])}
-    else:
-        params_tensor = {"weight": fc_params["weight"], "bias": fc_params["bias"]}
-
-    # Get mean per feature dimension
-    dice_info = Tensor(ind_data_dict["train features"]).mean(0).cpu().numpy()
-    dice_layer = RouteDICE(
-        in_features=ind_data_dict["train features"].shape[1],
-        out_features=ind_data_dict["train logits"].shape[1],
-        bias=True,
-        p=percentile,
-        info=dice_info,
+    # Instantiate Postprocessor
+    dice_postp = DICE(
+        method_name="dice",
+        flip_sign=False,
+        dice_percentile=percentile,
+        num_classes=ind_data_dict["train logits"].shape[1]
     )
-    dice_layer.load_state_dict(params_tensor)
-    dice_layer.to(device)
-    dice_layer.eval()
+    dice_postp.setup(
+        ind_train_data=ind_data_dict["train features"],
+        valid_feats=ind_data_dict["valid features"],
+        final_linear_layer_params=fc_params,
+    )
 
     # Valid set scores
-    with torch.no_grad():
-        ind_valid_logits = (
-            dice_layer(Tensor(ind_data_dict["valid features"]).to(device)).cpu().numpy()
-        )
-    ind_energy = logsumexp(ind_valid_logits, axis=1)
-    ind_energy = np.asarray(ind_energy)
-    ind_data_dict["dice"] = ind_energy
+    ind_data_dict["dice"] = dice_postp.postprocess(test_data=ind_data_dict["valid features"])
     # OoD
     for ood_name in ood_names:
-        with torch.no_grad():
-            ood_logits = (
-                dice_layer(Tensor(ood_data_dict[f"{ood_name} features"]).to(device)).cpu().numpy()
-            )
-        ood_energy = logsumexp(ood_logits, axis=1)
-        ood_baselines_dict[f"{ood_name} dice"] = np.asarray(ood_energy)
+        ood_baselines_dict[f"{ood_name} dice"] = dice_postp.postprocess(
+            test_data=ood_data_dict[f"{ood_name} features"]
+        )
 
     return ind_data_dict, ood_baselines_dict
 
@@ -233,77 +221,6 @@ def get_dice_react_score_from_features(
     return ind_data_dict, ood_baselines_dict
 
 
-# ASH with scaling for convolutional layers
-def ash_s_conv_layer(x: Tensor, percentile: int = 65):
-    """Apply ASH-S scaling for convolutional feature maps.
-
-    This function implements the ASH-S pruning and scaling operation for 4D
-    convolutional tensors (B, C, H, W). It zeros out lower-importance elements
-    per sample and rescales the remaining values to preserve global energy.
-
-    Args:
-        x: A 4D torch Tensor with shape (batch, channels, height, width).
-        percentile: Percentile used to determine how many elements to keep.
-
-    Returns:
-        The sharpened tensor with the same shape as the input.
-    """
-    assert x.dim() == 4
-    assert 0 <= percentile <= 100
-    b, c, h, w = x.shape
-
-    # calculate the sum of the input per sample
-    s1 = x.sum(dim=[1, 2, 3])
-    n = x.shape[1:].numel()
-    k = n - int(np.round(n * percentile / 100.0))
-    t = x.view((b, c * h * w))
-    v, i = torch.topk(t, k, dim=1)
-    t.zero_().scatter_(dim=1, index=i, src=v)
-
-    # calculate new sum of the input per sample after pruning
-    s2 = x.sum(dim=[1, 2, 3])
-
-    # apply sharpening
-    scale = s1 / s2
-    x = x * torch.exp(scale[:, None, None, None])
-
-    return x
-
-
-def ash_s_linear_layer(x: np.ndarray, percentile: int = 85):
-    """Apply ASH-S scaling for linear (2D) activations.
-
-    This function keeps the top-k elements per row of a 2D numpy array and
-    applies a scaling similar to the convolutional version.
-
-    Args:
-        x: 2D numpy array with shape (batch, features).
-        percentile: Percentile used to determine how many features to keep.
-
-    Returns:
-        A 2D numpy array with the pruned-and-scaled activations.
-    """
-    assert x.ndim == 2
-    assert 0 <= percentile <= 100
-    # calculate the sum of the input per sample
-    s1 = x.sum(axis=1)
-    n = x.shape[1]
-    k = n - int(np.round(n * percentile / 100.0))
-    idx = np.argpartition(x, -k)[:, -k:]
-    top_k = np.partition(x, -k)[:, -k:]
-    scattered = np.zeros_like(x)
-    np.put_along_axis(scattered, indices=idx, values=top_k, axis=1)
-
-    # calculate new sum of the input per sample after pruning
-    s2 = scattered.sum(axis=1)
-
-    # apply sharpening
-    scale = s1 / s2
-    scattered = scattered * np.exp(scale[:, None])
-
-    return scattered
-
-
 def get_ash_score_from_features(
     fc_params: Dict[str, np.ndarray],
     ind_data_dict: Dict[str, np.ndarray],
@@ -358,37 +275,6 @@ def get_ash_score_from_features(
         ood_baselines_dict[f"{ood_name} ash"] = np.asarray(ood_energy)
 
     return ind_data_dict, ood_baselines_dict
-
-
-def generalized_entropy(probs, gamma, M):
-    """
-    Calculates a generalized entropy score based on the top M probabilities.
-
-    This function determines the generalized entropy for a set of probability
-    distributions. It focuses on the top M probabilities (sorted in descending
-    order) and applies a generalized entropy formula with a specific gamma value
-    to emphasize concentration or dispersion.
-
-    Args:
-        probs: ndarray
-            A 2D array where each row represents a probability distribution.
-        gamma: float
-            A parameter used to adjust the sensitivity to concentration within
-            the probability distribution. Higher values of gamma result in
-            stronger emphasis on higher probabilities.
-        M: int
-            The number of top probabilities from each distribution to consider in
-            the computation.
-
-    Returns:
-        ndarray:
-            An array containing the negative generalized entropy scores for each
-            distribution row in the input.
-    """
-    probs_sorted = np.sort(probs, axis=1)[:, -M:]
-    scores = np.sum(probs_sorted**gamma * (1 - probs_sorted) ** (gamma), axis=1)
-
-    return -scores
 
 
 def get_gen_score_from_logits(
@@ -659,78 +545,6 @@ def get_mahalanobis_score_from_features(
     return ind_data_dict, ood_baselines_dict
 
 
-def mahalanobis_preprocess(
-    ind_data: Dict[str, np.ndarray], num_classes: int
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Estimate class means and precision (inverse covariance) for Mahalanobis.
-
-    The function computes per-class means from the InD training features and
-    fits an EmpiricalCovariance on the centered data to obtain a precision matrix
-    for subsequent Mahalanobis distance computations.
-
-    Args:
-        ind_data: Dictionary with InD data arrays. Expects keys "train features"
-            and "train labels".
-        num_classes: Number of classes to compute statistics for.
-
-    Returns:
-        A tuple (class_mean, precision) where `class_mean` has shape
-        [num_classes, feature_dim] and `precision` is the precision matrix
-        returned by the fitted EmpiricalCovariance.
-    """
-    class_mean = []
-    centered_data = []
-    for c in range(num_classes):
-        class_samples = ind_data["train features"][ind_data["train labels"] == c]
-        if len(class_samples) == 0:
-            warnings.warn(f"No train examples for class {c}")
-        class_mean.append(class_samples.mean(0))
-        centered_data.append(class_samples - class_mean[c].reshape(1, -1))
-    class_mean = np.stack(class_mean)  # shape [#classes, feature dim]
-
-    group_lasso = EmpiricalCovariance(assume_centered=False)
-
-    group_lasso.fit(np.concatenate(centered_data).astype(np.float32))
-    # inverse of covariance
-    return class_mean, group_lasso.precision_
-
-
-def mahalanobis_postprocess(
-    feats: np.ndarray, class_mean: np.ndarray, precision: np.ndarray, num_classes: int
-) -> np.ndarray:
-    """Postprocess features into Mahalanobis-based confidence scores.
-
-    For each sample, the function computes the Mahalanobis quadratic form with
-    respect to each class mean and returns the maximum (best) confidence per
-    sample. Classes without training examples are excluded by replacing NaNs
-    with -inf.
-
-    Args:
-        feats: Array of shape (N, feature_dim) with features to score.
-        class_mean: Array of per-class means with shape (num_classes, feature_dim).
-        precision: Precision (inverse covariance) matrix used for the quadratic form.
-        num_classes: Number of classes considered.
-
-    Returns:
-        1D numpy array of length N with the per-sample Mahalanobis confidence scores.
-    """
-    all_conf_score = []
-    for feats in feats:
-        class_scores = np.zeros((1, num_classes))
-        for c in range(num_classes):
-            tensor = feats - class_mean[c].reshape(1, -1)
-            class_scores[:, c] = np.diag(-np.matmul(np.matmul(tensor, precision), tensor.T))
-        # Exclude the score for classes with no examples in the training data!
-        class_scores[np.isnan(class_scores)] = -np.inf
-        conf = np.max(class_scores, axis=1)
-
-        all_conf_score.append(conf)
-
-    all_conf_score_t = np.concatenate(all_conf_score)
-
-    return all_conf_score_t
-
-
 def get_knn_score_from_features(
     ind_data_dict: Dict[str, np.ndarray],
     ood_data_dict: Dict[str, np.ndarray],
@@ -894,89 +708,6 @@ def remove_latent_features(
     return id_data, ood_data
 
 
-# DDU calculations
-def gmm_fit(
-    embeddings: Tensor, labels: Tensor, num_classes: int
-) -> Tuple[torch.distributions.MultivariateNormal, float]:
-    """Fit a class-conditional Gaussian Mixture approximation (per-class MVN).
-
-    The function computes per-class empirical means and covariance matrices
-    (with handling for classes that have no examples). It then attempts to build
-    a torch.distributions.MultivariateNormal object for the collection of
-    class means and covariances, adding a small jitter if necessary to ensure
-    positive-definiteness.
-
-    Args:
-        embeddings: 2D torch Tensor of shape (N, D) containing feature embeddings.
-        labels: 1D torch Tensor with integer class labels for the embeddings.
-        num_classes: Number of classes expected.
-
-    Returns:
-        A tuple (gmm, jitter_eps) where `gmm` is a torch.distributions.MultivariateNormal
-        instance parameterized by stacked class means and covariance matrices,
-        and `jitter_eps` is the last jitter scalar tried (0 or a small power of 10)
-        that permitted successful construction.
-    """
-    jitters = [0] + [10**exp for exp in range(-20, 0, 1)]
-
-    def centered_cov_torch(x):
-        n = x.shape[0]
-        if n == 1:
-            n += 1
-        res = 1 / (n - 1) * x.t().mm(x)
-        return res
-
-    with torch.no_grad():
-        classwise_mean_features = torch.stack(
-            [torch.mean(embeddings[labels == c], dim=0) for c in range(num_classes)]
-        )
-        classwise_cov_features = torch.stack(
-            [
-                centered_cov_torch(embeddings[labels == c] - classwise_mean_features[c])
-                for c in range(num_classes)
-            ]
-        )
-    # Control for classes with no examples
-    n_cols_to_remove = torch.any(classwise_mean_features.isnan(), dim=1, keepdim=True).sum().item()
-    if n_cols_to_remove > 0:
-        cols_bool = ~torch.any(classwise_mean_features.isnan(), dim=1, keepdim=True)
-        remaining_cols = classwise_mean_features.shape[0] - n_cols_to_remove
-        hidden_dim = classwise_mean_features.shape[1]
-        # Subset means
-        mean_mask = cols_bool.repeat(1, hidden_dim)
-        classwise_mean_features = classwise_mean_features[mean_mask].reshape(remaining_cols, -1)
-        # Subset covariances
-        cov_mask = (
-            cols_bool.repeat(1, hidden_dim)
-            .repeat(1, hidden_dim)
-            .reshape(num_classes, hidden_dim, hidden_dim)
-        )
-        classwise_cov_features = classwise_cov_features[cov_mask].reshape(
-            remaining_cols, hidden_dim, hidden_dim
-        )
-
-    with torch.no_grad():
-        for jitter_eps in jitters:
-            try:
-                jitter = jitter_eps * torch.eye(
-                    classwise_cov_features.shape[1],
-                    device=classwise_cov_features.device,
-                ).unsqueeze(0)
-                gmm = torch.distributions.MultivariateNormal(
-                    loc=classwise_mean_features,
-                    covariance_matrix=(classwise_cov_features + jitter),
-                )
-            except RuntimeError as e:
-                if "cholesky" in str(e):
-                    continue
-            except ValueError as e:
-                if "found invalid values" in str(e):
-                    continue
-            break
-
-    return gmm, jitter_eps
-
-
 def get_ddu_score_from_features(
     ind_data_dict: Dict[str, np.ndarray],
     ood_data_dict: Dict[str, np.ndarray],
@@ -1022,42 +753,6 @@ def get_ddu_score_from_features(
         ood_baselines_dict[f"{ood_name} ddu"] = np.asarray(ood_energy)
 
     return ind_data_dict, ood_baselines_dict
-
-
-def get_baselines_thresholds(
-    baselines_names: List[str],
-    baselines_scores_dict: Dict[str, np.ndarray],
-    z_score_percentile: float = 1.645,
-) -> Dict[str, float]:
-    """Compute thresholds for baselines using a z-score-like percentile.
-
-    For each baseline name provided, the function computes mean and standard
-    deviation of the corresponding scores and returns a threshold defined as
-    mean - z_score_percentile * std (useful when higher scores indicate InD).
-
-    Args:
-        baselines_names: List of baseline keys to compute thresholds for.
-        baselines_scores_dict: Dictionary mapping baseline keys to numpy arrays
-            with per-sample scores.
-        z_score_percentile: Scalar multiplier corresponding to z-score cutoff
-            (default 1.645 approximates the one-sided 95% quantile).
-
-    Returns:
-        Dictionary mapping baseline name to threshold float.
-    """
-    thresholds = {}
-    for baseline_name in baselines_names:
-        # Raw means no postprocessing; therefore, the threshold is zero so that no prediction gets corrected.
-        # This is useful for calculating base model statistics on open set benchmarks
-        if baseline_name == "raw":
-            thresholds[baseline_name] = 0.0
-        else:
-            # Force numeric scalars
-            mean = float(np.mean(baselines_scores_dict[baseline_name]))
-            std = float(np.std(baselines_scores_dict[baseline_name]))
-            # We suppose higher is ID, then 95% of ID scores should be above the threshold
-            thresholds[baseline_name] = mean - (z_score_percentile * std)
-    return thresholds
 
 
 def calculate_all_baselines(
@@ -1202,3 +897,77 @@ def calculate_all_baselines(
         )
 
     return ind_data_dict, ood_data_dict, ood_baselines_scores_dict
+
+
+baseline_name_dict = {
+    "pred_h": {
+        "plot_title": "Predictive H distribution",
+        "x_axis": "Predictive H score",
+        "plot_name": "pred_h",
+    },
+    "mi": {
+        "plot_title": "Predictive MI distribution",
+        "x_axis": "Predictive MI score",
+        "plot_name": "pred_mi",
+    },
+    "msp": {
+        "plot_title": "Predictive MSP distribution",
+        "x_axis": "Predictive MSP score",
+        "plot_name": "pred_msp",
+    },
+    "energy": {
+        "plot_title": "Predictive energy score distribution",
+        "x_axis": "Predictive energy score",
+        "plot_name": "pred_energy",
+    },
+    "mdist": {
+        "plot_title": "Mahalanobis Distance distribution",
+        "x_axis": "Mahalanobis Distance score",
+        "plot_name": "pred_mdist",
+    },
+    "knn": {
+        "plot_title": "kNN distance distribution",
+        "x_axis": "kNN Distance score",
+        "plot_name": "pred_knn",
+    },
+    "ash": {
+        "plot_title": "ASH score distribution",
+        "x_axis": "ASH score",
+        "plot_name": "ash_score",
+    },
+    "dice": {
+        "plot_title": "DICE score distribution",
+        "x_axis": "DICE score",
+        "plot_name": "dice_score",
+    },
+    "react": {
+        "plot_title": "ReAct score distribution",
+        "x_axis": "ReAct score",
+        "plot_name": "react_score",
+    },
+    "dice_react": {
+        "plot_title": "DICE + ReAct score distribution",
+        "x_axis": "DICE + ReAct score",
+        "plot_name": "dice_react_score",
+    },
+    "vim": {
+        "plot_title": "ViM score distribution",
+        "x_axis": "ViM score",
+        "plot_name": "vim_score",
+    },
+    "gen": {
+        "plot_title": "GEN score distribution",
+        "x_axis": "GEN score",
+        "plot_name": "gen_score",
+    },
+    "ddu": {
+        "plot_title": "DDU score distribution",
+        "x_axis": "DDU score",
+        "plot_name": "ddu_score",
+    },
+    "raw": {
+        "plot_title": "Raw predictions",
+        "x_axis": "Raw predictions",
+        "plot_name": "raw_predictions",
+    }
+}
