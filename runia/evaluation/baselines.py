@@ -7,25 +7,12 @@
 #    Based on https://github.com/fregu856/deeplabv3
 #    Fabio Arnez, probabilistic adaptation
 #    Daniel Montoya
-import faiss
-import torch
 from omegaconf import DictConfig
-from sklearn.covariance import EmpiricalCovariance
-from scipy.special import logsumexp, softmax
-from torch import Tensor
+from scipy.special import softmax
 from typing import Tuple, Dict, List, Union
 import numpy as np
-from runia.inference.funcs import (
-    normalizer,
-    RouteDICE,
-    ash_s_linear_layer,
-    generalized_entropy,
-    mahalanobis_preprocess,
-    mahalanobis_postprocess,
-    gmm_fit
-)
-from runia.inference.postprocessors import DICE
 
+from runia.inference.postprocessors import DICE, ReAct, ASH, GEN, ViM, MSP, Energy, Mahalanobis, KNN, DDU, DICEReAct
 
 __all__ = [
     "remove_latent_features",
@@ -69,23 +56,22 @@ def get_dice_score_from_features(
 
     print("Calculating DICE score")
     # Instantiate Postprocessor
-    dice_postp = DICE(
-        method_name="dice",
+    postp = DICE(
         flip_sign=False,
         dice_percentile=percentile,
         num_classes=ind_data_dict["train logits"].shape[1]
     )
-    dice_postp.setup(
+    postp.setup(
         ind_train_data=ind_data_dict["train features"],
         valid_feats=ind_data_dict["valid features"],
         final_linear_layer_params=fc_params,
     )
 
     # Valid set scores
-    ind_data_dict["dice"] = dice_postp.postprocess(test_data=ind_data_dict["valid features"])
+    ind_data_dict["dice"] = postp.postprocess(test_data=ind_data_dict["valid features"])
     # OoD
     for ood_name in ood_names:
-        ood_baselines_dict[f"{ood_name} dice"] = dice_postp.postprocess(
+        ood_baselines_dict[f"{ood_name} dice"] = postp.postprocess(
             test_data=ood_data_dict[f"{ood_name} features"]
         )
 
@@ -125,24 +111,22 @@ def get_react_score_from_features(
         receives entries for each OoD dataset under the key "{ood_name} react".
     """
     print("Calculating ReAct score")
-    w, b = fc_params["weight"], fc_params["bias"]
-    if isinstance(w, Tensor):
-        w = w.numpy()
-    if isinstance(b, Tensor):
-        b = b.numpy()
-    # Calculate threshold
-    activation_threshold = np.percentile(ind_data_dict["train features"].flatten(), percentile)
-    clipped_ind_valid_features = ind_data_dict["valid features"].clip(max=activation_threshold)
-    ind_valid_logits = np.matmul(clipped_ind_valid_features, w.T) + b
-    ind_energy = logsumexp(ind_valid_logits, axis=1)
-    ind_energy = np.asarray(ind_energy)
-    ind_data_dict["react"] = ind_energy
+    postp = ReAct(
+        flip_sign=False,
+        react_percentile=percentile,
+    )
+    postp.setup(
+        ind_train_data=ind_data_dict["train features"],
+        valid_feats=ind_data_dict["valid features"],
+        final_linear_layer_params=fc_params,
+    )
+    # Valid set scores
+    ind_data_dict["react"] = postp.postprocess(test_data=ind_data_dict["valid features"])
     # OoD
     for ood_name in ood_names:
-        ood_clipped_features = ood_data_dict[f"{ood_name} features"].clip(max=activation_threshold)
-        ood_logits = np.matmul(ood_clipped_features, w.T) + b
-        ood_energy = logsumexp(ood_logits, axis=1)
-        ood_baselines_dict[f"{ood_name} react"] = np.asarray(ood_energy)
+        ood_baselines_dict[f"{ood_name} react"] = postp.postprocess(
+            test_data=ood_data_dict[f"{ood_name} features"]
+        )
 
     return ind_data_dict, ood_baselines_dict
 
@@ -181,42 +165,22 @@ def get_dice_react_score_from_features(
         receives entries for each OoD dataset under the key "{ood_name} dice_react".
     """
     print("Calculating DICE+ReAct score")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if isinstance(fc_params["weight"], np.ndarray) or isinstance(fc_params["bias"], np.ndarray):
-        params_tensor = {"weight": Tensor(fc_params["weight"]), "bias": Tensor(fc_params["bias"])}
-    else:
-        params_tensor = {"weight": fc_params["weight"], "bias": fc_params["bias"]}
-    # DICE Get mean per feature dimension
-    dice_info = Tensor(ind_data_dict["train features"]).mean(0).cpu().numpy()
-    dice_layer = RouteDICE(
-        in_features=ind_data_dict["train features"].shape[1],
-        out_features=ind_data_dict["train logits"].shape[1],
-        bias=True,
-        p=dice_percentile,
-        info=dice_info,
+    postp = DICEReAct(
+        flip_sign=False,
+        dice_percentile=dice_percentile,
+        react_percentile=react_percentile,
+        num_classes=ind_data_dict["train logits"].shape[1]
     )
-    dice_layer.load_state_dict(params_tensor)
-    dice_layer.to(device)
-    dice_layer.eval()
+    postp.setup(
+        ind_train_data=ind_data_dict["train features"],
+        valid_feats=ind_data_dict["valid features"],
+        final_linear_layer_params=fc_params,
+    )
 
-    # React Calculate threshold
-    activation_threshold = np.percentile(
-        ind_data_dict["train features"].flatten(), react_percentile
-    )
-    # Valid set scores
-    clipped_ind_valid_features = ind_data_dict["valid features"].clip(max=activation_threshold)
-    with torch.no_grad():
-        ind_valid_logits = dice_layer(Tensor(clipped_ind_valid_features).to(device)).cpu().numpy()
-    ind_energy = logsumexp(ind_valid_logits, axis=1)
-    ind_energy = np.asarray(ind_energy)
-    ind_data_dict["dice_react"] = ind_energy
+    ind_data_dict["dice_react"] = postp.postprocess(test_data=ind_data_dict["valid features"])
     # OoD
     for ood_name in ood_names:
-        ood_clipped_features = ood_data_dict[f"{ood_name} features"].clip(max=activation_threshold)
-        with torch.no_grad():
-            ood_logits = dice_layer(Tensor(ood_clipped_features).to(device)).cpu().numpy()
-        ood_energy = logsumexp(ood_logits, axis=1)
-        ood_baselines_dict[f"{ood_name} dice_react"] = np.asarray(ood_energy)
+        ood_baselines_dict[f"{ood_name} dice_react"] = postp.postprocess(test_data=ood_data_dict[f"{ood_name} features"])
 
     return ind_data_dict, ood_baselines_dict
 
@@ -253,26 +217,20 @@ def get_ash_score_from_features(
         receives entries for each OoD dataset under the key "{ood_name} ash".
     """
     print("Calculating ash score")
-    w, b = fc_params["weight"], fc_params["bias"]
-    if isinstance(w, Tensor):
-        w = w.numpy()
-    if isinstance(b, Tensor):
-        b = b.numpy()
-    ind_valid_scattered_features = ash_s_linear_layer(
-        ind_data_dict["valid features"], ash_percentile
+    postp = ASH(
+        flip_sign=False,
+        ash_percentile=ash_percentile,
     )
-    ind_valid_logits = np.matmul(ind_valid_scattered_features, w.T) + b
-    ind_energy = logsumexp(ind_valid_logits, axis=1)
-    ind_energy = np.asarray(ind_energy)
-    ind_data_dict["ash"] = ind_energy
+    postp.setup(
+        ind_train_data=ind_data_dict["train features"],
+        valid_feats=ind_data_dict["valid features"],
+        final_linear_layer_params=fc_params,
+    )
+    # InD valid scores
+    ind_data_dict["ash"] = postp.postprocess(test_data=ind_data_dict["valid features"])
     # OoD
     for ood_name in ood_names:
-        ood_scattered_features = ash_s_linear_layer(
-            ood_data_dict[f"{ood_name} features"], ash_percentile
-        )
-        ood_logits = np.matmul(ood_scattered_features, w.T) + b
-        ood_energy = logsumexp(ood_logits, axis=1)
-        ood_baselines_dict[f"{ood_name} ash"] = np.asarray(ood_energy)
+        ood_baselines_dict[f"{ood_name} ash"] = postp.postprocess(test_data=ood_data_dict[f"{ood_name} features"])
 
     return ind_data_dict, ood_baselines_dict
 
@@ -307,14 +265,17 @@ def get_gen_score_from_logits(
         receives entries for each OoD dataset under the key "{ood_name} gen".
     """
     print("Calculating GEN score")
-
-    softmax_ind_valid = softmax(ind_data_dict["valid logits"], axis=1)
-    gen_score_ind_valid = generalized_entropy(softmax_ind_valid, gamma, gen_m)
-    ind_data_dict["gen"] = gen_score_ind_valid
+    postp = GEN(
+        flip_sign=False,
+        gamma=gamma,
+        num_classes=gen_m,
+    )
+    postp.setup(
+        ind_train_data=ind_data_dict["train logits"],
+    )
+    ind_data_dict["gen"] = postp.postprocess(test_data=ind_data_dict["valid logits"])
     for ood_name in ood_names:
-        softmax_ood = softmax(ood_data_dict[f"{ood_name} logits"], axis=1)
-        gen_score_ood = generalized_entropy(softmax_ood, gamma, gen_m)
-        ood_baselines_dict[f"{ood_name} gen"] = gen_score_ood
+        ood_baselines_dict[f"{ood_name} gen"] = postp.postprocess(test_data=ood_data_dict[f"{ood_name} logits"])
 
     return ind_data_dict, ood_baselines_dict
 
@@ -349,47 +310,25 @@ def calculate_vim_score(
         receives entries for each OoD dataset under the key "{ood_name} vim".
     """
     print("Calculating ViM score")
-    w, b = fc_params["weight"], fc_params["bias"]
-    if isinstance(w, Tensor):
-        w = w.numpy()
-    if isinstance(b, Tensor):
-        b = b.numpy()
-    u = -np.matmul(np.linalg.pinv(w), b)
+    postp = ViM(
+        flip_sign=False,
+    )
 
-    if ind_data_dict["train features"].shape[-1] >= 2048:
-        DIM = 1000
-    elif ind_data_dict["train features"].shape[-1] >= 768:
-        DIM = 512
-    else:
-        DIM = ind_data_dict["train features"].shape[-1] // 2
-    print(f"{DIM=}")
-    feature_id_train = ind_data_dict["train features"]
-    feature_id_val = ind_data_dict["valid features"]
-    # Last class is the background
-    logit_id_train = ind_data_dict["train logits"]
-    logit_id_val = ind_data_dict["valid logits"]
-
-    ec = EmpiricalCovariance(assume_centered=True)
-    ec.fit(feature_id_train - u)
-    eig_vals, eigen_vectors = np.linalg.eig(ec.covariance_)
-    NS = np.ascontiguousarray((eigen_vectors.T[np.argsort(eig_vals * -1)[DIM:]]).T)
-
-    vlogit_id_train = np.linalg.norm(np.matmul(feature_id_train - u, NS), axis=-1)
-    alpha = logit_id_train.max(axis=-1).mean() / vlogit_id_train.mean()
-    print(f"{alpha=:.4f}")
-
-    vlogit_id_val = np.linalg.norm(np.matmul(feature_id_val - u, NS), axis=-1) * alpha
-    energy_id_val = logsumexp(logit_id_val, axis=-1)
-    score_id = -vlogit_id_val + energy_id_val
-    ind_data_dict["vim"] = score_id
+    postp.setup(
+        ind_train_data=ind_data_dict["train features"],
+        train_logits=ind_data_dict["train logits"],
+        valid_feats=ind_data_dict["valid features"],
+        valid_logits=ind_data_dict["valid logits"],
+        final_linear_layer_params=fc_params,
+    )
+    ind_data_dict["vim"] = postp.postprocess(
+        test_data=ind_data_dict["valid features"], logits=ind_data_dict["valid logits"]
+    )
 
     for ood_name in ood_names:
-        logit_ood = ood_data_dict[f"{ood_name} logits"]
-        feature_ood = ood_data_dict[f"{ood_name} features"]
-        energy_ood = logsumexp(logit_ood, axis=-1)
-        vlogit_ood = np.linalg.norm(np.matmul(feature_ood - u, NS), axis=-1) * alpha
-        score_ood = -vlogit_ood + energy_ood
-        ood_baselines_dict[f"{ood_name} vim"] = score_ood
+        ood_baselines_dict[f"{ood_name} vim"] = postp.postprocess(
+            test_data=ood_data_dict[f"{ood_name} features"], logits=ood_data_dict[f"{ood_name} logits"]
+        )
 
     return ind_data_dict, ood_baselines_dict
 
@@ -419,11 +358,15 @@ def get_msp_score_from_logits(
         receives entries for each OoD dataset under the key "{ood_name} msp".
     """
     print("Calculating msp score")
-    ind_valid_msp = np.max(softmax(ind_data_dict["valid logits"], axis=1), axis=1)
-    ind_data_dict["msp"] = ind_valid_msp
+    postp = MSP(
+        flip_sign=False,
+    )
+    postp.setup(
+        ind_train_data=ind_data_dict["train logits"],
+    )
+    ind_data_dict["msp"] = postp.postprocess(test_data=ind_data_dict["valid logits"])
     for ood_name in ood_names:
-        ood_msp = np.max(softmax(ood_data_dict[f"{ood_name} logits"], axis=1), axis=1)
-        ood_baselines_dict[f"{ood_name} msp"] = ood_msp
+        ood_baselines_dict[f"{ood_name} msp"] = postp.postprocess(test_data=ood_data_dict[f"{ood_name} logits"])
 
     return ind_data_dict, ood_baselines_dict
 
@@ -486,12 +429,15 @@ def get_energy_score_from_logits(
         receives entries for each OoD dataset under the key "{ood_name} energy".
     """
     print("Calculating energy score")
-    ind_energy = logsumexp(ind_data_dict["valid logits"], axis=1)
-    ind_energy = np.asarray(ind_energy)
-    ind_data_dict["energy"] = ind_energy
+    postp = Energy(
+        flip_sign=False,
+    )
+    postp.setup(
+        ind_train_data=ind_data_dict["train logits"],
+    )
+    ind_data_dict["energy"] = postp.postprocess(test_data=ind_data_dict["valid logits"])
     for ood_name in ood_names:
-        ood_energy = logsumexp(ood_data_dict[f"{ood_name} logits"], axis=1)
-        ood_baselines_dict[f"{ood_name} energy"] = np.asarray(ood_energy)
+        ood_baselines_dict[f"{ood_name} energy"] = postp.postprocess(test_data=ood_data_dict[f"{ood_name} logits"])
 
     return ind_data_dict, ood_baselines_dict
 
@@ -525,22 +471,19 @@ def get_mahalanobis_score_from_features(
         receives entries for each OoD dataset under the key "{ood_name} mdist".
     """
     print("Calculating mahalanobis score")
-    class_mean, precision = mahalanobis_preprocess(ind_data=ind_data_dict, num_classes=num_classes)
-    ind_valid_score = mahalanobis_postprocess(
-        feats=ind_data_dict["valid features"],
-        class_mean=class_mean,
-        precision=precision,
+    postp = Mahalanobis(
+        flip_sign=False,
         num_classes=num_classes,
     )
-    ind_data_dict["mdist"] = ind_valid_score
+    postp.setup(
+        ind_train_data=ind_data_dict["train features"],
+        train_labels=ind_data_dict["train labels"],
+        valid_feats=ind_data_dict["valid features"],
+    )
+
+    ind_data_dict["mdist"] = postp.postprocess(test_data=ind_data_dict["valid features"])
     for ood_name in ood_names:
-        ood_score = mahalanobis_postprocess(
-            feats=ood_data_dict[f"{ood_name} features"],
-            class_mean=class_mean,
-            precision=precision,
-            num_classes=num_classes,
-        )
-        ood_baselines_dict[f"{ood_name} mdist"] = ood_score
+        ood_baselines_dict[f"{ood_name} mdist"] = postp.postprocess(test_data=ood_data_dict[f"{ood_name} features"])
 
     return ind_data_dict, ood_baselines_dict
 
@@ -574,37 +517,67 @@ def get_knn_score_from_features(
         receives entries for each OoD dataset under the key "{ood_name} knn".
     """
     print("Calculating knn score")
-    # Prepare knn model with training data
-    train_activations = (
-        normalizer(ind_data_dict["train features"])
-        if isinstance(ind_data_dict["train features"], np.ndarray)
-        else np.asarray(normalizer(ind_data_dict["train features"]))
+    postp = KNN(
+        flip_sign=False,
+        k_neighbors=k_neighbors,
     )
-    # Faiss requires float32 C-contiguous arrays
-    train_activations = np.ascontiguousarray(train_activations.astype(np.float32))
-    index = faiss.IndexFlatL2(ind_data_dict["train features"].shape[1])
-    index.add(train_activations)  # type: ignore[arg-type]
-
-    def postprocess_knn(data: np.ndarray, k: int) -> np.ndarray:
-        k_scores = []
-        for sample in data:
-            activations = normalizer(sample.reshape(1, -1))
-            activations = np.ascontiguousarray(np.asarray(activations).astype(np.float32))
-            # search returns (distances, labels)
-            # Explicitly cast k to int; add type ignore because the static analyzer
-            # cannot infer faiss' C-extension signature correctly.
-            D, _ = index.search(activations, int(k))  # type: ignore[call-arg]
-            kth_dist = -D[:, -1]
-            k_scores.append(kth_dist)
-        return np.concatenate(k_scores, axis=0)
+    postp.setup(
+        ind_train_data=ind_data_dict["train features"],
+        valid_feats=ind_data_dict["valid features"],
+    )
 
     # InD valid
-    ind_data_dict["knn"] = postprocess_knn(ind_data_dict["valid features"], k_neighbors)
+    ind_data_dict["knn"] = postp.postprocess(test_data=ind_data_dict["valid features"])
 
     # OoD datasets
     for ood_name in ood_names:
-        ood_score = postprocess_knn(ood_data_dict[f"{ood_name} features"], k_neighbors)
-        ood_baselines_dict[f"{ood_name} knn"] = ood_score
+        ood_baselines_dict[f"{ood_name} knn"] = postp.postprocess(test_data=ood_data_dict[f"{ood_name} features"])
+
+    return ind_data_dict, ood_baselines_dict
+
+
+def get_ddu_score_from_features(
+    ind_data_dict: Dict[str, np.ndarray],
+    ood_data_dict: Dict[str, np.ndarray],
+    ood_names: List[str],
+    ood_baselines_dict: Dict[str, np.ndarray],
+    num_classes: int,
+) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+    """Compute DDU scores by fitting per-class Gaussians and scoring log-prob.
+
+    DDU (Deep Deterministic Uncertainty) leverages a fitted per-class Gaussian
+    to compute per-sample log-probabilities; the function aggregates class log
+    probabilities and stores the energy-like score for InD validation and each
+    OoD dataset.
+
+    Args:
+        ind_data_dict: Dictionary with InD data arrays. Expected keys include
+            "train features" and "valid features" and "train labels".
+        ood_data_dict: Dictionary with OoD data arrays. Each OoD dataset should
+            provide a "{ood_name} features" entry.
+        ood_names: List of OoD dataset names present in `ood_data_dict`.
+        ood_baselines_dict: Dictionary that will be populated with computed OoD
+            baseline scores (keyed by "{ood_name} ddu").
+        num_classes: Number of classes used to fit the per-class Gaussians.
+
+    Returns:
+        Tuple of (updated ind_data_dict, updated ood_baselines_dict) where the
+        InD dictionary receives a "ddu" entry and the OoD baselines dictionary
+        receives entries for each OoD dataset under the key "{ood_name} ddu".
+    """
+    print("Calculating ddu score")
+    postp = DDU(
+        flip_sign=False,
+        num_classes=num_classes,
+    )
+    postp.setup(
+        ind_train_data=ind_data_dict["train features"],
+        train_labels=ind_data_dict["train labels"],
+        valid_feats=ind_data_dict["valid features"],
+    )
+    ind_data_dict["ddu"] = postp.postprocess(test_data=ind_data_dict["valid features"])
+    for ood_name in ood_names:
+        ood_baselines_dict[f"{ood_name} ddu"] = postp.postprocess(test_data=ood_data_dict[f"{ood_name} features"])
 
     return ind_data_dict, ood_baselines_dict
 
@@ -706,53 +679,6 @@ def remove_latent_features(
         ood_data.pop(f"{ood_name} features", None)
 
     return id_data, ood_data
-
-
-def get_ddu_score_from_features(
-    ind_data_dict: Dict[str, np.ndarray],
-    ood_data_dict: Dict[str, np.ndarray],
-    ood_names: List[str],
-    ood_baselines_dict: Dict[str, np.ndarray],
-    num_classes: int,
-) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
-    """Compute DDU scores by fitting per-class Gaussians and scoring log-prob.
-
-    DDU (Deep Deterministic Uncertainty) leverages a fitted per-class Gaussian
-    to compute per-sample log-probabilities; the function aggregates class log
-    probabilities and stores the energy-like score for InD validation and each
-    OoD dataset.
-
-    Args:
-        ind_data_dict: Dictionary with InD data arrays. Expected keys include
-            "train features" and "valid features" and "train labels".
-        ood_data_dict: Dictionary with OoD data arrays. Each OoD dataset should
-            provide a "{ood_name} features" entry.
-        ood_names: List of OoD dataset names present in `ood_data_dict`.
-        ood_baselines_dict: Dictionary that will be populated with computed OoD
-            baseline scores (keyed by "{ood_name} ddu").
-        num_classes: Number of classes used to fit the per-class Gaussians.
-
-    Returns:
-        Tuple of (updated ind_data_dict, updated ood_baselines_dict) where the
-        InD dictionary receives a "ddu" entry and the OoD baselines dictionary
-        receives entries for each OoD dataset under the key "{ood_name} ddu".
-    """
-    print("Calculating ddu score")
-    gmm, _ = gmm_fit(
-        embeddings=Tensor(ind_data_dict["train features"]),
-        labels=Tensor(ind_data_dict["train labels"]),
-        num_classes=num_classes,
-    )
-    ddu_valid_log_probs = gmm.log_prob(Tensor(ind_data_dict["valid features"][:, None, :]))
-    ind_energy = logsumexp(ddu_valid_log_probs.numpy(), axis=1)
-    ind_energy = np.asarray(ind_energy)
-    ind_data_dict["ddu"] = ind_energy
-    for ood_name in ood_names:
-        ood_log_probs = gmm.log_prob(Tensor(ood_data_dict[f"{ood_name} features"][:, None, :]))
-        ood_energy = logsumexp(ood_log_probs.numpy(), axis=1)
-        ood_baselines_dict[f"{ood_name} ddu"] = np.asarray(ood_energy)
-
-    return ind_data_dict, ood_baselines_dict
 
 
 def calculate_all_baselines(

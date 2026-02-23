@@ -522,7 +522,7 @@ class Energy(OodPostprocessor):
 
         """
         # Need ID scores in Dict format for threshold setup
-        ind_scores = {self.method_name: logsumexp(ind_train_data, axis=1)}
+        ind_scores = logsumexp(ind_train_data, axis=1)
         ind_scores = self.flip_sign_fn(ind_scores)
         self.set_threshold(ind_scores)
 
@@ -561,8 +561,6 @@ class MSP(OodPostprocessor):
     softmax of logits as the confidence score for each sample.
 
     Attributes:
-        method_name (str): Name of the method used for scoring, which is a
-            key in the output score dictionary.
         flip_sign (bool): Indicates whether the calculated scores should
             be inverted during postprocessing.
     """
@@ -581,7 +579,7 @@ class MSP(OodPostprocessor):
 
         """
         # Need ID scores in Dict format for threshold setup
-        ind_scores = {self.method_name: np.max(softmax(ind_train_data, axis=1), axis=1)}
+        ind_scores = np.max(softmax(ind_train_data, axis=1), axis=1)
         ind_scores = self.flip_sign_fn(ind_scores)
         self.set_threshold(ind_scores)
 
@@ -621,7 +619,6 @@ class GEN(OodPostprocessor):
     and computes entropy-based OOD detection scores for test data.
 
     Attributes:
-        method_name (str): The name of the postprocessing method.
         gamma (float): The entropy regularization parameter that controls the level of
             entropy applied to scores.
         num_classes (int): The number of classes in the classification task.
@@ -629,7 +626,6 @@ class GEN(OodPostprocessor):
 
     def __init__(
         self,
-        method_name: str,
         flip_sign: bool,
         gamma: float,
         num_classes: int,
@@ -641,15 +637,13 @@ class GEN(OodPostprocessor):
         to invert the score or use a setup flag.
 
         Args:
-            method_name (str): Name of the method to initialize.
             flip_sign (bool): Whether the score inversion is applied.
             gamma (float): The gamma parameter for the method.
             num_classes (int): Number of classes being used.
             setup_flag (bool): A flag to determine if additional setup is required.
             cfg (DictConfig): Configuration dictionary for additional settings.
         """
-        super().__init__(method_name, flip_sign, cfg)
-        self.method_name = method_name
+        super().__init__(flip_sign, cfg)
         self.gamma = gamma
         self.num_classes = num_classes
 
@@ -670,9 +664,7 @@ class GEN(OodPostprocessor):
         """
         softmax_ind_train = softmax(ind_train_data, axis=1)
         # Need ID scores in Dict format for threshold setup
-        ind_scores = {
-            self.method_name: generalized_entropy(softmax_ind_train, self.gamma, self.num_classes)
-        }
+        ind_scores = generalized_entropy(softmax_ind_train, self.gamma, self.num_classes)
         ind_scores = self.flip_sign_fn(ind_scores)
         self.set_threshold(ind_scores)
 
@@ -718,7 +710,6 @@ class DDU(OodPostprocessor):
 
     def __init__(
         self,
-        method_name: str,
         flip_sign: bool,
         num_classes: int,
         cfg: DictConfig = None,
@@ -727,18 +718,12 @@ class DDU(OodPostprocessor):
         Initializes the instance of the class with the given parameters.
 
         Args:
-            method_name (str): The name of the method.
             flip_sign (bool): Flag indicating whether the score should be multiplied by -1 to ensure ID scores are higher than OOD scores.
             num_classes (int): The number of classes for the classification task.
             cfg (DictConfig): Optional configuration dictionary.
 
-        Attributes:
-            num_classes (int): The number of classes for the classification task.
-            gmm: A placeholder for the Gaussian Mixture Model, initially set to None.
-            device (str): The device type used for computations, either "cuda" if a
-                GPU is available, or "cpu" otherwise.
         """
-        super().__init__(method_name, flip_sign, cfg)
+        super().__init__(flip_sign, cfg)
         self.num_classes = num_classes
         self.gmm = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -772,9 +757,7 @@ class DDU(OodPostprocessor):
         ind_test_log_probs = self.gmm.log_prob(
             Tensor(kwargs["valid_feats"][:, None, :]).to(self.device)
         )
-        ind_energy = logsumexp(ind_test_log_probs.cpu().numpy(), axis=1)
-        # Need ID scores in Dict format for threshold setup
-        ind_scores = {self.method_name: ind_energy}
+        ind_scores = logsumexp(ind_test_log_probs.cpu().numpy(), axis=1)
         ind_scores = self.flip_sign_fn(ind_scores)
         self.set_threshold(ind_scores)
 
@@ -803,6 +786,101 @@ class DDU(OodPostprocessor):
         return scores
 
 
+@register_postprocessor("knn", postprocessor_input=["features"])
+class KNN(OodPostprocessor):
+    """
+    KNN (K-Nearest Neighbors) postprocessor class.
+
+    This class implements a postprocessor for managing OOD detection utilizing K-Nearest neighbors
+    (KNN). The purpose is to compute scores for given test data, indicating uncertainty
+    or out-of-distribution likelihood. It requires setup with appropriate training data and
+    parameters before postprocessing can occur.
+
+    Attributes:
+        k_neighbors (int): The number of nearest neighbors to consider for KNN scoring.
+        device (str): Device to be used for computation, either "cuda" (if available) or "cpu".
+    """
+
+    def __init__(
+        self,
+        flip_sign: bool,
+        k_neighbors: int,
+        cfg: DictConfig = None,
+    ):
+        """
+        Initializes the instance of the class with the given parameters.
+
+        Args:
+            flip_sign (bool): Flag indicating whether the score should be multiplied by -1 to ensure ID scores are higher than OOD scores.
+             (int): The number of classes for the classification task.
+            k_neighbors (int): The number of nearest neighbors to consider for KNN scoring.
+            cfg (DictConfig): Optional configuration dictionary.
+        """
+        super().__init__(flip_sign, cfg)
+        self.k_neighbors = k_neighbors
+        self.gmm = None
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.index = None
+
+    def setup(self, ind_train_data: np.ndarray, **kwargs):
+        """
+        Sets up the configuration and initializes the necessary components for the DDU
+        method. This function fits a Gaussian Mixture Model (GMM) using the supplied
+        training embeddings and labels, then computes log probabilities and energy
+        scores required for threshold setup.
+
+        Args:
+            ind_train_data (np.ndarray): In-distribution training data features.
+            **kwargs: Additional keyword arguments:
+                - valid_feats (np.ndarray): Validation set features for GMM score
+                  evaluation.
+
+        Raises:
+            AssertionError: If "valid_feats" is not provided in `kwargs`.
+        """
+        assert "valid_feats" in kwargs, "valid_feats must be provided for KNN setup"
+        train_activations = (
+            normalizer(ind_train_data)
+            if isinstance(ind_train_data, np.ndarray)
+            else np.asarray(normalizer(ind_train_data))
+        )
+        # Faiss requires float32 C-contiguous arrays
+        train_activations = np.ascontiguousarray(train_activations.astype(np.float32))
+        # self.activation_log = np.array([normalizer(feat) for feat in ind_train_data])
+        self.index = faiss.IndexFlatL2(ind_train_data.shape[1])
+        self.index.add(train_activations)
+        ind_scores = self.postprocess(kwargs["valid_feats"])
+        ind_scores = self.flip_sign_fn(ind_scores)
+        self.set_threshold(ind_scores)
+
+    def postprocess(self, test_data: np.ndarray, **kwargs) -> np.ndarray:
+        """
+        Applies post-processing steps to the input test data.
+
+        This method processes the given test data using a Gaussian Mixture Model
+        (GMM). It calculates the log probabilities of the test samples against the
+        GMM, derives scores using a logarithmic sum exponential approach, and applies
+        an inversion function on the scores for final output.
+
+        Args:
+            test_data: Input data to process as a NumPy array.
+            **kwargs: Additional keyword arguments for the method.
+
+        Returns:
+            np.ndarray: The processed scores as a NumPy array.
+        """
+        kth_scores = []
+        for feat in test_data:
+            latent_rep_normed = normalizer(feat.reshape(1, -1))
+            latent_rep_normed = np.ascontiguousarray(np.asarray(latent_rep_normed).astype(np.float32))
+            D, _ = self.index.search(latent_rep_normed, self.k_neighbors)
+            kth_dist = -D[:, -1]
+            kth_scores.append(kth_dist)
+        scores = np.concatenate(kth_scores, axis=0)
+        scores = self.flip_sign_fn(scores)
+        return scores
+
+
 @register_postprocessor("mahalanobis", postprocessor_input=["features"])
 class Mahalanobis(OodPostprocessor):
     """Handles Mahalanobis distance calculation for out-of-distribution detection.
@@ -823,7 +901,6 @@ class Mahalanobis(OodPostprocessor):
 
     def __init__(
         self,
-        method_name: str,
         flip_sign: bool,
         num_classes: int,
         cfg: DictConfig = None,
@@ -834,12 +911,11 @@ class Mahalanobis(OodPostprocessor):
         for attributes like `class_mean` and `precision`.
 
         Args:
-            method_name (str): Name of the specified method to be used.
             flip_sign (bool): Indicates whether to multiply the scores by -1 to ensure ID scores are higher than OOD scores.
             num_classes (int): Number of classes to be utilized in the method.
             cfg (DictConfig or None): Optional configuration settings for the method.
         """
-        super().__init__(method_name, flip_sign, cfg)
+        super().__init__(flip_sign, cfg)
         self.num_classes = num_classes
         self.class_mean = None
         self.precision = None
@@ -863,13 +939,12 @@ class Mahalanobis(OodPostprocessor):
         self.class_mean, self.precision = mahalanobis_preprocess(
             ind_data=ind_data_dict, num_classes=self.num_classes
         )
-        ind_valid_score = mahalanobis_postprocess(
+        ind_scores = mahalanobis_postprocess(
             feats=kwargs["valid_feats"],
             class_mean=self.class_mean,
             precision=self.precision,
             num_classes=self.num_classes,
         )
-        ind_scores = {self.method_name: ind_valid_score}
         ind_scores = self.flip_sign_fn(ind_scores)
         self.set_threshold(ind_scores)
 
@@ -925,7 +1000,6 @@ class ViM(OodPostprocessor):
 
     def __init__(
         self,
-        method_name: str,
         flip_sign: bool,
         cfg: DictConfig = None,
     ):
@@ -933,11 +1007,10 @@ class ViM(OodPostprocessor):
         Initializes the class with specified method configuration and parameters.
 
         Args:
-            method_name (str): Name of the method or algorithm to initialize.
             flip_sign (bool): Indicates whether to multiply the scores by -1 to ensure ID scores are higher than OOD scores.
             cfg (DictConfig, optional): Configuration object containing additional settings.
         """
-        super().__init__(method_name, flip_sign, cfg)
+        super().__init__(flip_sign, cfg)
         self.u = None
         self.DIM = None
         self.NS = None
@@ -1000,8 +1073,7 @@ class ViM(OodPostprocessor):
             np.linalg.norm(np.matmul(kwargs["valid_feats"] - self.u, self.NS), axis=-1) * self.alpha
         )
         energy_id_val = logsumexp(kwargs["valid_logits"], axis=-1)
-        score_id = -vlogit_id_val + energy_id_val
-        ind_scores = {self.method_name: score_id}
+        ind_scores = -vlogit_id_val + energy_id_val
         ind_scores = self.flip_sign_fn(ind_scores)
         self.set_threshold(ind_scores)
 
@@ -1057,7 +1129,6 @@ class ASH(OodPostprocessor):
 
     def __init__(
         self,
-        method_name: str,
         flip_sign: bool,
         ash_percentile: int = 85,
         cfg: DictConfig = None,
@@ -1066,13 +1137,12 @@ class ASH(OodPostprocessor):
         Initializes the ASH class with specified configuration parameters.
 
         Args:
-            method_name (str): Name of the method or algorithm to initialize.
             flip_sign (bool): Indicates whether to multiply the scores by -1 to ensure
                 ID scores are higher than OOD scores.
             ash_percentile (int, optional): Percentile used for ASH-S pruning. Default is 85.
             cfg (DictConfig, optional): Configuration object containing additional settings.
         """
-        super().__init__(method_name, flip_sign, cfg)
+        super().__init__(flip_sign, cfg)
         self.ash_percentile = ash_percentile
         self.w = None
         self.b = None
@@ -1112,10 +1182,8 @@ class ASH(OodPostprocessor):
         # Apply ASH-S to validation features
         ind_valid_scattered_features = ash_s_linear_layer(ind_train_data, self.ash_percentile)
         ind_valid_logits = np.matmul(ind_valid_scattered_features, self.w.T) + self.b
-        ind_energy = logsumexp(ind_valid_logits, axis=1)
-
+        ind_scores = logsumexp(ind_valid_logits, axis=1)
         # Setup threshold
-        ind_scores = {self.method_name: ind_energy}
         ind_scores = self.flip_sign_fn(ind_scores)
         self.set_threshold(ind_scores)
 
@@ -1172,7 +1240,6 @@ class DICE(OodPostprocessor):
 
     def __init__(
         self,
-        method_name: str,
         flip_sign: bool,
         dice_percentile: int = 90,
         num_classes: int = 10,
@@ -1182,14 +1249,13 @@ class DICE(OodPostprocessor):
         Initializes the DICE class with specified configuration parameters.
 
         Args:
-            method_name (str): Name of the method or algorithm to initialize.
             flip_sign (bool): Indicates whether to multiply the scores by -1 to ensure
                 ID scores are higher than OOD scores.
             dice_percentile (int, optional): Percentile used for DICE sparsification. Default is 90.
             num_classes (int, optional): Number of output classes. Default is 10.
             cfg (DictConfig, optional): Configuration object containing additional settings.
         """
-        super().__init__(method_name, flip_sign, cfg)
+        super().__init__(flip_sign, cfg)
         self.dice_percentile = dice_percentile
         self.num_classes = num_classes
         self.dice_layer = None
@@ -1249,10 +1315,8 @@ class DICE(OodPostprocessor):
             ind_valid_logits = (
                 self.dice_layer(Tensor(kwargs["valid_feats"]).to(self.device)).cpu().numpy()
             )
-        ind_energy = logsumexp(ind_valid_logits, axis=1)
-
+        ind_scores = logsumexp(ind_valid_logits, axis=1)
         # Setup threshold
-        ind_scores = {self.method_name: ind_energy}
         ind_scores = self.flip_sign_fn(ind_scores)
         self.set_threshold(ind_scores)
 
@@ -1310,7 +1374,6 @@ class ReAct(OodPostprocessor):
 
     def __init__(
         self,
-        method_name: str,
         flip_sign: bool,
         react_percentile: int = 90,
         cfg: DictConfig = None,
@@ -1319,14 +1382,13 @@ class ReAct(OodPostprocessor):
         Initializes the ReAct class with specified configuration parameters.
 
         Args:
-            method_name (str): Name of the method or algorithm to initialize.
             flip_sign (bool): Indicates whether to multiply the scores by -1 to ensure
                 ID scores are higher than OOD scores.
             react_percentile (int, optional): Percentile used to compute the activation
                 clipping threshold. Default is 90.
             cfg (DictConfig, optional): Configuration object containing additional settings.
         """
-        super().__init__(method_name, flip_sign, cfg)
+        super().__init__(flip_sign, cfg)
         self.react_percentile = react_percentile
         self.activation_threshold = None
         self.w = None
@@ -1371,10 +1433,9 @@ class ReAct(OodPostprocessor):
         # Apply ReAct to validation features
         clipped_ind_valid_features = kwargs["valid_feats"].clip(max=self.activation_threshold)
         ind_valid_logits = np.matmul(clipped_ind_valid_features, self.w.T) + self.b
-        ind_energy = logsumexp(ind_valid_logits, axis=1)
+        ind_scores = logsumexp(ind_valid_logits, axis=1)
 
         # Setup threshold
-        ind_scores = {self.method_name: ind_energy}
         ind_scores = self.flip_sign_fn(ind_scores)
         self.set_threshold(ind_scores)
 
@@ -1406,6 +1467,153 @@ class ReAct(OodPostprocessor):
         # Apply ReAct transformation (clip activations)
         clipped_features = test_data.clip(max=self.activation_threshold)
         test_logits = np.matmul(clipped_features, self.w.T) + self.b
+        scores = logsumexp(test_logits, axis=1)
+        scores = self.flip_sign_fn(scores)
+        return scores
+
+
+@register_postprocessor("dice_react", postprocessor_input=["features"])
+class DICEReAct(OodPostprocessor):
+    """
+    DICE (Directed Sparsification) class.
+
+    The DICE class implements post-processing for out-of-distribution detection using
+    the RouteDICE layer. This method applies a sparsification technique that masks
+    weights based on the contribution of each feature dimension, computed from the
+    training data statistics.
+
+    Attributes:
+        dice_percentile (int): Percentile parameter that controls the sparsification
+            level in the DICE layer.
+        react_percentile (int): Percentile parameter used to compute the activation
+            clipping threshold from the training features.
+        react_activation_threshold (float): The computed threshold value used to clip activations.
+        num_classes (int): Number of output classes for the classification task.
+        dice_layer (RouteDICE): The RouteDICE layer instance used for computing scores.
+        device (str): Device to be used for computation, either "cuda" (if available) or "cpu".
+    """
+
+    def __init__(
+        self,
+        flip_sign: bool,
+        dice_percentile: int = 90,
+        react_percentile: int = 90,
+        num_classes: int = 10,
+        cfg: DictConfig = None,
+    ):
+        """
+        Initializes the DICE class with specified configuration parameters.
+
+        Args:
+            flip_sign (bool): Indicates whether to multiply the scores by -1 to ensure
+                ID scores are higher than OOD scores.
+            dice_percentile (int, optional): Percentile used for DICE sparsification. Default is 90.
+            react_percentile (int): Percentile parameter used to compute the activation
+                clipping threshold from the training features.
+            num_classes (int, optional): Number of output classes. Default is 10.
+            cfg (DictConfig, optional): Configuration object containing additional settings.
+        """
+        super().__init__(flip_sign, cfg)
+        self.dice_percentile = dice_percentile
+        self.react_percentile = react_percentile
+        self.num_classes = num_classes
+        self.dice_layer = None
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.react_activation_threshold = None
+
+    def setup(self, ind_train_data: np.ndarray, **kwargs):
+        """
+        Sets up the DICE model for specific data inputs and configurations. This
+        method instantiates a RouteDICE layer using the provided linear layer parameters
+        and training data statistics, then computes scores on the validation set.
+
+        Args:
+            ind_train_data (np.ndarray): In-distribution training data features used
+                to compute the mean per feature dimension for DICE.
+            **kwargs: Additional keyword arguments required for setup. Must include:
+                - "final_linear_layer_params": Dictionary containing the "weight"
+                  and "bias" of the final linear layer in the model.
+                - "valid_feats": Validation dataset features for threshold computation.
+
+        Raises:
+            AssertionError: If "final_linear_layer_params" is not provided in kwargs.
+            AssertionError: If "valid_feats" is not provided in kwargs.
+        """
+        assert (
+            "final_linear_layer_params" in kwargs
+        ), "final_linear_layer_params must be provided for DICE"
+        assert "valid_feats" in kwargs, "valid_feats must be provided for DICE"
+
+        w, b = (
+            kwargs["final_linear_layer_params"]["weight"],
+            kwargs["final_linear_layer_params"]["bias"],
+        )
+
+        # Convert to tensors if needed
+        if isinstance(w, np.ndarray):
+            params_tensor = {"weight": Tensor(w), "bias": Tensor(b)}
+        else:
+            params_tensor = {"weight": w, "bias": b}
+
+        # Get mean per feature dimension
+        dice_info = Tensor(ind_train_data).mean(0).cpu().numpy()
+
+        # Instantiate RouteDICE layer
+        self.dice_layer = RouteDICE(
+            in_features=ind_train_data.shape[1],
+            out_features=self.num_classes,
+            bias=True,
+            p=self.dice_percentile,
+            info=dice_info,
+        )
+        self.dice_layer.load_state_dict(params_tensor)
+        self.dice_layer.to(self.device)
+        self.dice_layer.eval()
+
+        # React Calculate threshold
+        self.react_activation_threshold = np.percentile(
+            ind_train_data.flatten(), self.react_percentile
+        )
+        # Clip Valid set scores (react)
+        clipped_ind_valid_features = kwargs["valid_feats"].clip(max=self.react_activation_threshold)
+        # Compute validation scores
+        with torch.no_grad():
+            ind_valid_logits = (
+                self.dice_layer(Tensor(clipped_ind_valid_features).to(self.device)).cpu().numpy()
+            )
+        ind_scores = logsumexp(ind_valid_logits, axis=1)
+        # Setup threshold
+        ind_scores = self.flip_sign_fn(ind_scores)
+        self.set_threshold(ind_scores)
+
+    def postprocess(self, test_data: np.ndarray, **kwargs) -> np.ndarray:
+        """
+        Postprocesses the input test data to compute DICE-based confidence scores.
+
+        This method passes test features through the RouteDICE layer to obtain
+        sparsified logits, then computes energy-based scores for OOD detection.
+
+        Args:
+            test_data (np.ndarray): The input test data features, either as a NumPy
+                array or a PyTorch Tensor that will be converted to NumPy.
+            **kwargs: Additional keyword arguments (not used but kept for API consistency).
+
+        Returns:
+            np.ndarray: An array of energy-based scores computed from the DICE-transformed
+                logits.
+
+        Raises:
+            AssertionError: If the method is called before setup() has been successfully
+                executed to configure the necessary internal state.
+        """
+        assert self._setup_flag, "setup() must be called before postprocess()"
+        if isinstance(test_data, np.ndarray):
+            test_data = Tensor(test_data)
+        # Apply ReAct clipping
+        test_data = test_data.clip(max=self.react_activation_threshold)
+        # Apply DICE transformation
+        with torch.no_grad():
+            test_logits = self.dice_layer(test_data.to(self.device)).cpu().numpy()
         scores = logsumexp(test_logits, axis=1)
         scores = self.flip_sign_fn(scores)
         return scores

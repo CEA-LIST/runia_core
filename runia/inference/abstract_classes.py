@@ -147,18 +147,16 @@ class OodPostprocessor(Postprocessor):
             Typically used for OOD decision-making.
     """
 
-    def __init__(self, method_name: str, flip_sign: bool, cfg: DictConfig = None):
+    def __init__(self, flip_sign: bool, cfg: DictConfig = None):
         """
         Initializes the class with the method name, score inversion flag, and optional configuration.
 
         Args:
-            method_name (str): The name of the method to be initialized.
             flip_sign (bool): A flag indicating whether the score should be multiplied by -1.
             cfg (DictConfig, optional): An optional configuration object. Defaults to None.
         """
         super().__init__(cfg)
         self.flip_sign = flip_sign
-        self.method_name = method_name
         self.threshold: Union[float, None] = None
 
     def flip_sign_fn(
@@ -189,7 +187,7 @@ class OodPostprocessor(Postprocessor):
                 raise ValueError("scores must be a dict or ndarray")
         return scores
 
-    def set_threshold(self, ind_test_scores: Dict[str, ndarray]) -> None:
+    def set_threshold(self, ind_test_scores: ndarray, z_score_percentile: float = 1.645) -> None:
         """
         Updates the threshold value by calculating baseline thresholds using the
         provided individual test scores. Sets the setup flag to True once the
@@ -199,11 +197,10 @@ class OodPostprocessor(Postprocessor):
             ind_test_scores (Dict[str, ndarray]): A dictionary where keys are the
                 names of individual test metrics and values are NumPy arrays
                 containing the scores for the respective metrics.
+            z_score_percentile (float): A scalar multiplier corresponding to the z-score cutoff
+                (default 1.645 approximates the one-sided 95% quantile).
         """
-        self.threshold = get_baselines_thresholds(
-            baselines_names=[self.method_name],
-            baselines_scores_dict=ind_test_scores,
-        )[self.method_name]
+        self.threshold = get_method_threshold(scores=ind_test_scores, z_score_percentile=z_score_percentile)
         self._setup_flag = True
 
     def setup(self, ind_train_data: ndarray, **kwargs) -> None:
@@ -400,9 +397,27 @@ def get_baselines_thresholds(
         if baseline_name == "raw":
             thresholds[baseline_name] = 0.0
         else:
-            # Force numeric scalars
-            mean = float(np.mean(baselines_scores_dict[baseline_name]))
-            std = float(np.std(baselines_scores_dict[baseline_name]))
-            # We suppose higher is ID, then 95% of ID scores should be above the threshold
-            thresholds[baseline_name] = mean - (z_score_percentile * std)
+            thresholds[baseline_name] = get_method_threshold(
+                scores=baselines_scores_dict[baseline_name],
+                z_score_percentile=z_score_percentile,
+            )
     return thresholds
+
+
+def get_method_threshold(scores: np.ndarray, z_score_percentile: float):
+    """
+    Compute a threshold for a given method based on the mean and standard deviation of the scores.
+
+    Args:
+        scores: A numpy array of scores for the method, where higher scores indicate in-distribution (ID) samples.
+        z_score_percentile: A scalar multiplier corresponding to the z-score cutoff
+            (e.g., 1.645 for the one-sided 95% quantile).
+
+    Returns:
+        A float representing the computed threshold for the method, calculated as mean - (z_score_percentile * std).
+    """
+    # Force numeric scalars
+    mean = float(np.mean(scores))
+    std = float(np.std(scores))
+    # We suppose higher is ID, then 95% of ID scores should be above the threshold
+    return mean - (z_score_percentile * std)
