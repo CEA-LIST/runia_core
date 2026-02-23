@@ -25,7 +25,10 @@ __all__ = [
     "get_mcd_pred_uncertainty_score",
     "get_predictive_uncertainty_score",
     "get_dice_feat_mean_react_percentile",
+    "mahalanobis_preprocess",
+    "mahalanobis_postprocess",
 ]
+
 
 def mahalanobis_preprocess(
     ind_data: Dict[str, np.ndarray], num_classes: int

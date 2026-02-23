@@ -12,6 +12,7 @@ relevant.
 
 from unittest import TestCase, main
 from typing import Dict
+from omegaconf import OmegaConf
 import logging
 
 import numpy as np
@@ -27,9 +28,9 @@ from runia_core.inference import (
     mahalanobis_postprocess,
     gmm_fit,
     MDLatentSpace,
-    KDELatentSpace
+    KDELatentSpace,
 )
-from runia_core.evaluation.baselines import get_labels_from_logits, remove_latent_features
+from runia_core.evaluation.baselines import get_labels_from_logits, remove_latent_features, calculate_all_baselines
 from runia_core.inference.abstract_classes import get_baselines_thresholds
 from .tests_architecture import Net
 
@@ -44,11 +45,13 @@ logger.setLevel(logging.DEBUG)
 # If you change any of the following parameters the tests will not pass!!
 SEED = 1
 TEST_SET_PROPORTION = 0.02
+TEST_SAMPLES = 200
 MCD_N_SAMPLES = 3
 LATENT_SPACE_DIM = 20
 TOL = 1e-6
 LAYER_TYPE = "Conv"
 REDUCTION_METHOD = "fullmean"
+BASELINES_NAMES = ["vim", "mdist", "msp", "knn", "energy", "ash", "dice", "react", "gen", "dice_react", "ddu", "raw"]
 ########################################################################
 
 
@@ -185,6 +188,63 @@ class TestBaselinesFromPrecalculated(TestCase):
         self.assertTrue(hasattr(gmm, "loc"))
         self.assertEqual(list(gmm.loc.shape), [2, 3])
         self.assertIsInstance(jitter, (int, float))
+
+    def test_all_baselines_postp(self):
+        torch.manual_seed(SEED)
+        np.random.seed(SEED)
+        cfg = OmegaConf.create(
+            {
+                "ood_datasets": ['test_ood'],
+                "ash_percentile": 90,
+                "react_percentile": 90,
+                "dice_percentile": 90,
+                "gen_gamma": 0.1,
+                "k_neighbors": 10
+            }
+        )
+        fc_params = {
+            "weight": np.random.rand(LATENT_SPACE_DIM, LATENT_SPACE_DIM).astype(np.float32),
+            "bias": np.random.rand(LATENT_SPACE_DIM).astype(np.float32),
+        }
+
+        # Here we start from a supposed already calculated logits and features
+        # ID
+        train_ind_feats = np.float32(np.random.random((TEST_SAMPLES, LATENT_SPACE_DIM)))
+        train_ind_logits = np.float32(np.random.random((TEST_SAMPLES, LATENT_SPACE_DIM)))
+        val_ind_feats = np.float32(np.random.random((TEST_SAMPLES, LATENT_SPACE_DIM)))
+        val_ind_logits = np.float32(np.random.random((TEST_SAMPLES, LATENT_SPACE_DIM)))
+        id_data = {
+            "train features": train_ind_feats,
+            "train logits": train_ind_logits,
+            "valid features": val_ind_feats,
+            "valid logits": val_ind_logits,
+        }
+        # OOD
+        test_ood_feats = np.float32(np.random.random((TEST_SAMPLES, LATENT_SPACE_DIM)))
+        test_ood_logits = np.float32(np.random.random((TEST_SAMPLES, LATENT_SPACE_DIM)))
+        ood_ds_name = "test_ood"
+        ood_data = {
+            f"{ood_ds_name} features": test_ood_feats,
+            f"{ood_ds_name} logits": test_ood_logits,
+        }
+        id_data, ood_data, ood_baselines_scores = calculate_all_baselines(
+            baselines_names=BASELINES_NAMES,
+            ind_data_dict=id_data,
+            ood_data_dict=ood_data,
+            fc_params=fc_params,
+            cfg=cfg,
+            num_classes=LATENT_SPACE_DIM
+        )
+        self.assertAlmostEqual(ood_baselines_scores["test_ood msp"].mean(), 0.07561022, delta=TOL)
+        self.assertAlmostEqual(ood_baselines_scores["test_ood knn"].mean(), -0.28827268, delta=TOL)
+        self.assertAlmostEqual(ood_baselines_scores["test_ood energy"].mean(), 3.5367718, delta=TOL)
+        self.assertAlmostEqual(ood_baselines_scores["test_ood ash"].mean(), 437.55548, delta=TOL)
+        self.assertAlmostEqual(ood_baselines_scores["test_ood gen"].mean(), -14.69404, delta=TOL)
+        self.assertAlmostEqual(ood_baselines_scores["test_ood react"].mean(), 8.930155, delta=TOL)
+        self.assertAlmostEqual(ood_baselines_scores["test_ood dice"].mean(), 4.779826, delta=TOL)
+        self.assertAlmostEqual(ood_baselines_scores["test_ood dice_react"].mean(), 4.7608514, delta=TOL)
+        self.assertAlmostEqual(ood_baselines_scores["test_ood mdist"].mean(), -20.75197064883483, delta=TOL)
+        self.assertAlmostEqual(ood_baselines_scores["test_ood ddu"].mean(), -861438.0625, delta=TOL)
 
 
 class TestBaselinesFromModel(TestCase):
