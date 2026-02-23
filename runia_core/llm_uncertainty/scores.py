@@ -11,7 +11,7 @@ import torch
 import numpy as np
 from typing import Union, List, Dict, Tuple, Any
 
-from runia.import_helper_functions import module_exists
+from runia_core.import_helper_functions import module_exists
 
 if module_exists("transformers"):
     from transformers import (
@@ -21,12 +21,12 @@ if module_exists("transformers"):
         AutoModelForSequenceClassification,
         AutoTokenizer,
     )
-from runia.llm_uncertainty.utils import (
+from runia_core.llm_uncertainty.utils import (
     _semantic_clustering,
     _construct_embedding_matrix,
     _get_probability_distribution,
 )
-from runia.llm_uncertainty.attention_aggregation import (
+from runia_core.llm_uncertainty.attention_aggregation import (
     _get_recurent_attention,
     _get_average_attention_all,
     _get_attention_rollout,

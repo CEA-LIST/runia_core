@@ -15,7 +15,7 @@ import torch
 from numpy import ndarray
 from omegaconf import DictConfig
 
-from runia.feature_extraction.utils import Hook
+from runia_core.feature_extraction.utils import Hook
 
 __all__ = [
     "record_time",

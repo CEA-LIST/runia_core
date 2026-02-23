@@ -3,7 +3,7 @@
 Unit tests for the evaluation.inference.postprocessors module.
 
 This script provides comprehensive unit tests for the postprocessor classes in the
-runia.evaluation.inference.postprocessors module. It tests various
+runia_core.evaluation.inference.postprocessors module. It tests various
 postprocessing methods for out-of-distribution (OoD) detection including density estimation,
 distance-based methods, and energy-based approaches.
 
@@ -20,7 +20,7 @@ Requirements:
     - Faiss
     - SciPy
     - unittest (built-in)
-    - runia library
+    - runia_core library
 
 Date: 2025-01-09
 """
@@ -34,7 +34,7 @@ import torch
 from omegaconf import DictConfig
 from torch import Tensor
 
-from runia.inference.postprocessors import (
+from runia_core.inference.postprocessors import (
     DDU,
     GEN,
     ViM,

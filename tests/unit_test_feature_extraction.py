@@ -1,8 +1,8 @@
 from unittest import TestCase, main
 import numpy as np
 
-from runia.evaluation import single_image_entropy_calculation, get_dl_h_z
-from runia.feature_extraction import (
+from runia_core.evaluation import single_image_entropy_calculation, get_dl_h_z
+from runia_core.feature_extraction import (
     get_latent_representation_mcd_samples,
     MCDSamplesExtractor,
     apply_dropout,

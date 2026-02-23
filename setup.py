@@ -6,7 +6,7 @@ LONG_DESCRIPTION = "Uncertainty estimation methods for Deep Neural Networks (DNN
 
 # Setting up
 setup(
-    name="runia",
+    name="runia_core",
     version=VERSION,
     author="Daniel Montoya",
     author_email="<daniel-alfonso.montoyavasquez@cea.fr>",

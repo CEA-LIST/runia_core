@@ -2,7 +2,7 @@ from typing import List, Dict, Tuple
 import torch
 import torch.nn.functional as F
 
-from runia.import_helper_functions import module_exists
+from runia_core.import_helper_functions import module_exists
 
 if module_exists("transformers"):
     from transformers import PreTrainedModel, PreTrainedTokenizer

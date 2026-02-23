@@ -1,7 +1,7 @@
 from unittest import TestCase, main
 import numpy as np
 
-from runia.dimensionality_reduction import (
+from runia_core.dimensionality_reduction import (
     apply_pca_ds_split,
     apply_pca_transform,
     plot_samples_pacmap,

@@ -11,14 +11,14 @@ from typing import Tuple
 import numpy as np
 import torch
 
-from runia.dimensionality_reduction import apply_pca_transform
-from runia.feature_extraction.abstract_classes import MCSamplerModule
-from runia.feature_extraction.utils import (
+from runia_core.dimensionality_reduction import apply_pca_transform
+from runia_core.feature_extraction.abstract_classes import MCSamplerModule
+from runia_core.feature_extraction.utils import (
     get_mean_or_fullmean_ls_sample,
     Hook,
 )
-from runia.evaluation.entropy import get_dl_h_z
-from runia.inference.abstract_classes import (
+from runia_core.evaluation.entropy import get_dl_h_z
+from runia_core.inference.abstract_classes import (
     ProbabilisticInferenceModule,
     record_time,
     InferenceModule,

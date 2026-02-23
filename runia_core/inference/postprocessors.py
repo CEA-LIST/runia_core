@@ -19,7 +19,7 @@ from sklearn.covariance import EmpiricalCovariance
 from sklearn.neighbors import KernelDensity
 from torch import Tensor
 
-from runia.inference.funcs import (
+from runia_core.inference.funcs import (
     mahalanobis_preprocess,
     mahalanobis_postprocess,
     gmm_fit,
@@ -28,7 +28,7 @@ from runia.inference.funcs import (
     RouteDICE,
     normalizer,
 )
-from runia.inference.abstract_classes import (
+from runia_core.inference.abstract_classes import (
     Postprocessor,
     OodPostprocessor,
 )

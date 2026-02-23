@@ -19,11 +19,11 @@ from tqdm import tqdm
 from torch import Tensor
 from dropblock import DropBlock2D
 
-from runia.feature_extraction.abstract_classes import (
+from runia_core.feature_extraction.abstract_classes import (
     Extractor,
     ObjectDetectionExtractor,
 )
-from runia.feature_extraction.utils import (
+from runia_core.feature_extraction.utils import (
     Hook,
     get_mean_or_fullmean_ls_sample,
     get_std_ls_sample,

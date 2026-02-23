@@ -1,6 +1,6 @@
 from unittest import TestCase, main
 import numpy as np
-from runia.evaluation.metrics import get_auroc_results, log_evaluate_postprocessors
+from runia_core.evaluation.metrics import get_auroc_results, log_evaluate_postprocessors
 
 #########################################################################
 # PARAMETERS

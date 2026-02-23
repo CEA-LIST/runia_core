@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from torchvision.ops import nms
 from abc import ABC, abstractmethod
 
-from runia.feature_extraction.utils import (
+from runia_core.feature_extraction.utils import (
     Hook,
     get_mean_or_fullmean_ls_sample,
 )

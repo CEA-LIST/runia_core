@@ -1,7 +1,7 @@
 """
 tests/unit_test_llm_uncertainty.py
 
-Unittest suite for functions in `runia.llm_uncertainty.scores`.
+Unittest suite for functions in `runia_core.llm_uncertainty.scores`.
 
 This test suite covers the uncertainty scoring functions for LLM outputs,
 including:
@@ -32,7 +32,7 @@ import torch
 from typing import Tuple
 from unittest.mock import MagicMock, patch
 
-from runia.llm_uncertainty.scores import (
+from runia_core.llm_uncertainty.scores import (
     eigen_score,
     normalized_entropy,
     semantic_entropy,
@@ -206,7 +206,7 @@ class TestSemanticEntropy(unittest.TestCase):
         np.random.seed(SEED)
         torch.manual_seed(SEED)
 
-    @patch("runia.llm_uncertainty.scores._semantic_clustering")
+    @patch("runia_core.llm_uncertainty.scores._semantic_clustering")
     def test_semantic_entropy_basic(self, mock_clustering):
         """Test semantic_entropy with mocked clustering."""
         # Mock clustering result: 3 clusters
@@ -233,7 +233,7 @@ class TestSemanticEntropy(unittest.TestCase):
         # Check clusters match mock
         self.assertEqual(len(clusters), 3)
 
-    @patch("runia.llm_uncertainty.scores._semantic_clustering")
+    @patch("runia_core.llm_uncertainty.scores._semantic_clustering")
     def test_semantic_entropy_single_cluster(self, mock_clustering):
         """Test semantic_entropy when all texts are in one cluster."""
         # All texts in one cluster -> entropy should be 0
@@ -248,7 +248,7 @@ class TestSemanticEntropy(unittest.TestCase):
         # Single cluster should have zero entropy
         self.assertAlmostEqual(entropy, 0.0, delta=TOL)
 
-    @patch("runia.llm_uncertainty.scores._semantic_clustering")
+    @patch("runia_core.llm_uncertainty.scores._semantic_clustering")
     def test_semantic_entropy_all_different(self, mock_clustering):
         """Test semantic_entropy when each text is in its own cluster."""
         # Each text in its own cluster -> maximum entropy

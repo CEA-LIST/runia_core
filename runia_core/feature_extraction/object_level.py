@@ -15,12 +15,12 @@ from torch.utils.data import DataLoader
 from torchvision.ops import roi_align
 from tqdm import tqdm
 
-from runia.feature_extraction.utils import Hook
-from runia.feature_extraction.abstract_classes import (
+from runia_core.feature_extraction.utils import Hook
+from runia_core.feature_extraction.abstract_classes import (
     ObjectDetectionExtractor,
     MCSamplerModule,
 )
-from runia.evaluation.entropy import get_dl_h_z
+from runia_core.evaluation.entropy import get_dl_h_z
 
 __all__ = [
     "BoxFeaturesExtractor",

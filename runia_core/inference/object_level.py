@@ -12,16 +12,16 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from runia.inference.abstract_classes import (
+from runia_core.inference.abstract_classes import (
     InferenceModule,
     record_time,
     ObjectDetectionInference,
 )
-import runia.feature_extraction.object_level
-from runia.feature_extraction.utils import Hook
-from runia.dimensionality_reduction import apply_pca_ds_split, apply_pca_transform
-from runia.import_helper_functions import module_exists
-from runia.inference.postprocessors import postprocessors_dict
+import runia_core.feature_extraction.object_level
+from runia_core.feature_extraction.utils import Hook
+from runia_core.dimensionality_reduction import apply_pca_ds_split, apply_pca_transform
+from runia_core.import_helper_functions import module_exists
+from runia_core.inference.postprocessors import postprocessors_dict
 
 if module_exists("ultralytics"):
     from ultralytics.engine.results import Boxes
@@ -136,7 +136,7 @@ class BoxInferenceYolo(InferenceModule):
             latent_rep = [layer.output for layer in layer_hook]  # latent representation sample
             # Get ROIs
             latent_rep_means, latent_rep_stds = (
-                runia.feature_extraction.object_level._reduce_features_to_rois(
+                runia_core.feature_extraction.object_level._reduce_features_to_rois(
                     latent_mcd_sample=latent_rep,
                     output_sizes=self.roi_output_sizes,
                     boxes=boxes,
@@ -343,7 +343,7 @@ class ObjectLevelInference(ObjectDetectionInference):
         self.postprocessor_input = postprocessor_input
 
         # Instantiate feature extractor, which has already implemented inference + extraction
-        self.features_extractor = runia.feature_extraction.object_level.BoxFeaturesExtractor(
+        self.features_extractor = runia_core.feature_extraction.object_level.BoxFeaturesExtractor(
             model=self.model,
             device=self.device,
             hooked_layers=self.hooked_layers,

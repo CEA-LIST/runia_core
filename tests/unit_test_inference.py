@@ -3,7 +3,7 @@
 Unit tests for the evaluation.inference module.
 
 This script provides comprehensive unit tests for the non-covered functions in the
-runia.evaluation.inference module. It tests various classes
+runia_core.evaluation.inference module. It tests various classes
 and functions including abstract classes, postprocessors, and inference modules.
 
 Usage:
@@ -16,7 +16,7 @@ Requirements:
     - PyTorch
     - NumPy
     - unittest (built-in)
-    - runia library
+    - runia_core library
 
 Date: 2025-01-09
 """
@@ -30,7 +30,7 @@ import numpy as np
 import torch
 from omegaconf import DictConfig
 
-from runia.inference.abstract_classes import (
+from runia_core.inference.abstract_classes import (
     InferenceModule,
     ObjectDetectionInference,
     OodPostprocessor,
@@ -38,7 +38,7 @@ from runia.inference.abstract_classes import (
     ProbabilisticInferenceModule,
     record_time,
 )
-from runia.feature_extraction import Hook
+from runia_core.feature_extraction import Hook
 
 # Configure logging
 logging.basicConfig(

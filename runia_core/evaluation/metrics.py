@@ -19,7 +19,7 @@ import torchmetrics.functional as tmf
 import seaborn as sns
 from collections import defaultdict
 
-from runia.inference.postprocessors import postprocessors_dict
+from runia_core.inference.postprocessors import postprocessors_dict
 
 __all__ = [
     "get_auroc_results",

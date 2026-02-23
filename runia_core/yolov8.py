@@ -4,7 +4,7 @@ from numpy import ascontiguousarray
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from runia.feature_extraction import FastMCDSamplesExtractor
+from runia_core.feature_extraction import FastMCDSamplesExtractor
 
 __all__ = ["FastMCDSamplesExtractorYolov8"]
 

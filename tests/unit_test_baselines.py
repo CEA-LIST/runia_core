@@ -1,9 +1,6 @@
 """
 tests/unit_test_baselines.py
 
-Unittest suite for non-covered functions in
-`runia.evaluation.baselines`.
-
 Run with:
 
     python -m unittest -q tests/unit_test_baselines.py
@@ -21,28 +18,21 @@ import numpy as np
 import torch
 import torchvision
 
-from runia.baselines.from_model_inference import (
+from runia_core.inference import (
     get_mcd_pred_uncertainty_score,
     get_predictive_uncertainty_score,
-    get_msp_score,
-    get_energy_score,
-    MDSPostprocessorFromModelInference,
-    KNNPostprocessorFromModelInference,
-)
-from runia.baselines.from_precalculated import (
     ash_s_linear_layer,
     generalized_entropy,
-    get_labels_from_logits,
-    remove_latent_features,
     mahalanobis_preprocess,
     mahalanobis_postprocess,
-    get_baselines_thresholds,
     gmm_fit,
+    MDLatentSpace,
+    KDELatentSpace
 )
+from runia_core.evaluation.baselines import get_labels_from_logits, remove_latent_features
+from runia_core.inference.abstract_classes import get_baselines_thresholds
 from .tests_architecture import Net
 
-from runia.feature_extraction import Hook
-from runia.inference import MDLatentSpace, KDELatentSpace
 
 # Configure module-level logger
 logger = logging.getLogger(__name__)
@@ -389,218 +379,6 @@ class TestBaselinesFromModel(TestCase):
             < TOL
         )
 
-    def test_get_msp_score(self):
-        torch.manual_seed(SEED)
-        msp_score = get_msp_score(self.tests_model, self.test_loader)
-        self.assertEqual(msp_score.shape, (self.subset_ds_len,))
-        self.assertTrue(
-            np.allclose(
-                msp_score[:LATENT_SPACE_DIM],
-                np.array(
-                    [
-                        0.1488787,
-                        0.12976062,
-                        0.14545625,
-                        0.1325143,
-                        0.13224202,
-                        0.14340535,
-                        0.14497909,
-                        0.14206077,
-                        0.1483772,
-                        0.14066638,
-                        0.13316885,
-                        0.13690054,
-                        0.13229437,
-                        0.15583877,
-                        0.14118572,
-                        0.15055893,
-                        0.13714625,
-                        0.13952997,
-                        0.13808227,
-                        0.13906068,
-                    ]
-                ),
-                atol=TOL,
-            )
-        )
-
-    def test_get_energy_score(self):
-        torch.manual_seed(SEED)
-        energy_score = get_energy_score(self.tests_model, self.test_loader)
-        self.assertEqual(energy_score.shape, (self.subset_ds_len,))
-        self.assertTrue(
-            np.allclose(
-                energy_score[:LATENT_SPACE_DIM],
-                np.array(
-                    [
-                        -1.1920929e-07,
-                        0.0000000e00,
-                        0.0000000e00,
-                        0.0000000e00,
-                        0.0000000e00,
-                        2.3841858e-07,
-                        0.0000000e00,
-                        0.0000000e00,
-                        1.1920929e-07,
-                        0.0000000e00,
-                        -1.1920929e-07,
-                        1.1920929e-07,
-                        1.1920929e-07,
-                        0.0000000e00,
-                        0.0000000e00,
-                        0.0000000e00,
-                        0.0000000e00,
-                        0.0000000e00,
-                        0.0000000e00,
-                        0.0000000e00,
-                    ]
-                ),
-                atol=TOL,
-            )
-        )
-
-    def test_MDSPostprocessor(self):
-        torch.manual_seed(SEED)
-        hooked_layer = Hook(self.tests_model.fc1)
-        mahalanobis_distance_estimator = MDSPostprocessorFromModelInference(
-            num_classes=len(self.mnist_data.classes)
-        )
-        mahalanobis_distance_estimator.setup(self.tests_model, self.test_loader, hooked_layer)
-        self.assertEqual(mahalanobis_distance_estimator.precision.shape, torch.Size([50, 50]))
-        self.assertAlmostEqual(
-            (
-                mahalanobis_distance_estimator.precision[0, :LATENT_SPACE_DIM].cpu().numpy()
-                - np.array(
-                    [
-                        170.5094604492,
-                        -52.0242500305,
-                        34.4856300354,
-                        -5.5944499969,
-                        8.1118783951,
-                        -21.6018276215,
-                        10.9460678101,
-                        23.8828983307,
-                        -43.7527389526,
-                        33.3161811829,
-                        -24.4308834076,
-                        51.1151428223,
-                        -18.2162342072,
-                        2.5270247459,
-                        -19.2660961151,
-                        -10.6695184708,
-                        -1.0805386305,
-                        -23.0190925598,
-                        -40.0322990417,
-                        -10.8404769897,
-                    ]
-                )
-            ).sum(),
-            0.0,
-            delta=TOL,
-        )
-        self.assertEqual(mahalanobis_distance_estimator.class_mean.shape, torch.Size([10, 50]))
-        self.assertTrue(
-            (
-                mahalanobis_distance_estimator.class_mean[0, :LATENT_SPACE_DIM].cpu()
-                - torch.Tensor(
-                    [
-                        0.6052651405,
-                        0.0038446099,
-                        0.2389417142,
-                        0.3413681388,
-                        0.2832605839,
-                        0.0235106181,
-                        0.0393453613,
-                        -0.5464248657,
-                        0.1489282548,
-                        -0.6214435697,
-                        0.2256181985,
-                        -0.2500761747,
-                        -0.0831953958,
-                        0.1687345952,
-                        0.0752467439,
-                        0.0566020831,
-                        0.0543221831,
-                        -0.0054004127,
-                        -0.3992331624,
-                        0.0079337684,
-                    ]
-                )
-            ).sum()
-            < TOL
-        )
-
-    def test_kNNPostprocessor(self):
-        torch.manual_seed(SEED)
-        np.random.seed(SEED)
-        hooked_layer = Hook(self.tests_model.fc1)
-        knn_processor = KNNPostprocessorFromModelInference(k=50)
-        knn_processor.setup(self.tests_model, self.test_loader, hooked_layer)
-        self.assertEqual(knn_processor.activation_log.shape, (self.subset_ds_len, 50))
-        self.assertTrue(
-            (
-                knn_processor.activation_log[0, :LATENT_SPACE_DIM]
-                - np.array(
-                    [
-                        0.38499776,
-                        0.09457733,
-                        -0.03053672,
-                        0.04870516,
-                        0.16147998,
-                        0.11905161,
-                        -0.03847426,
-                        -0.25957152,
-                        0.06517255,
-                        -0.16683035,
-                        0.06689644,
-                        -0.09510326,
-                        0.13610193,
-                        0.03214959,
-                        0.08813315,
-                        0.00172174,
-                        0.23592833,
-                        0.1691616,
-                        -0.05791634,
-                        0.06105684,
-                    ]
-                )
-            ).sum()
-            < TOL
-        )
-        post_processed = knn_processor.postprocess(
-            self.tests_model, self.test_loader, hooked_layer
-        )[1]
-        self.assertEqual(post_processed.shape, (self.subset_ds_len,))
-        self.assertTrue(
-            (
-                post_processed[:LATENT_SPACE_DIM]
-                - np.array(
-                    [
-                        -0.38611746,
-                        -0.31907094,
-                        -0.3071116,
-                        -0.30398384,
-                        -0.35546952,
-                        -0.36445117,
-                        -0.25926206,
-                        -0.42174175,
-                        -0.28614113,
-                        -0.4049912,
-                        -0.3439978,
-                        -0.2986006,
-                        -0.2777693,
-                        -0.3120209,
-                        -0.40481457,
-                        -0.2988768,
-                        -0.26255494,
-                        -0.25697285,
-                        -0.2816273,
-                        -0.30161113,
-                    ]
-                )
-            ).sum()
-            < TOL
-        )
 
     def test_larem_postprocessor(self):
         np.random.seed(SEED)

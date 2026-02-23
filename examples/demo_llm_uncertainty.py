@@ -1,5 +1,5 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
-from runia.llm_uncertainty.scores import compute_uncertainties
+from runia_core.llm_uncertainty.scores import compute_uncertainties
 
 PROMPT = "What is the capital of France?"
 

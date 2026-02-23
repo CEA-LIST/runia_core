@@ -15,14 +15,14 @@ from torch.utils.data import DataLoader
 from torch import Tensor
 from tqdm import tqdm
 
-from runia.dimensionality_reduction import apply_pca_transform
-from runia.inference import (
+from runia_core.dimensionality_reduction import apply_pca_transform
+from runia_core.inference import (
     LaRExInference,
     record_time,
     LaRDInference,
 )
-from runia.feature_extraction import Hook
-from runia.evaluation.entropy import get_dl_h_z
+from runia_core.feature_extraction import Hook
+from runia_core.evaluation.entropy import get_dl_h_z
 
 # Very bad practice
 dropblock_ext = DropBlock2D(drop_prob=0.4, block_size=1)

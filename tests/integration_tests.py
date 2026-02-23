@@ -6,20 +6,20 @@ import pandas as pd
 import urllib
 import tarfile
 import os
-from runia.evaluation.entropy import get_dl_h_z
-from runia.evaluation.metrics import (
+from runia_core.evaluation.entropy import get_dl_h_z
+from runia_core.evaluation.metrics import (
     select_and_log_best_larex,
     save_roc_ood_detector,
     get_pred_scores_plots,
 )
-from runia.feature_extraction import (
+from runia_core.feature_extraction import (
     get_latent_representation_mcd_samples,
     MCSamplerModule,
 )
-from runia.inference import MDLatentSpace, LaRExInference
-from runia.evaluation.latent_space import log_evaluate_postprocessors
-from runia.dimensionality_reduction import apply_pca_ds_split, apply_pca_transform
-from runia.feature_extraction import apply_dropout, Hook
+from runia_core.inference import MDLatentSpace, LaRExInference
+from runia_core.evaluation.latent_space import log_evaluate_postprocessors
+from runia_core.dimensionality_reduction import apply_pca_ds_split, apply_pca_transform
+from runia_core.feature_extraction import apply_dropout, Hook
 from .tests_architecture import Net
 
 #########################################################################

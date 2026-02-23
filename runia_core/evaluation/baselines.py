@@ -12,7 +12,7 @@ from scipy.special import softmax
 from typing import Tuple, Dict, List, Union
 import numpy as np
 
-from runia.inference.postprocessors import DICE, ReAct, ASH, GEN, ViM, MSP, Energy, Mahalanobis, KNN, DDU, DICEReAct
+from runia_core.inference.postprocessors import DICE, ReAct, ASH, GEN, ViM, MSP, Energy, Mahalanobis, KNN, DDU, DICEReAct
 
 __all__ = [
     "remove_latent_features",
