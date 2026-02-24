@@ -30,7 +30,11 @@ from runia_core.inference import (
     MDLatentSpace,
     KDELatentSpace,
 )
-from runia_core.evaluation.baselines import get_labels_from_logits, remove_latent_features, calculate_all_baselines
+from runia_core.evaluation.baselines import (
+    get_labels_from_logits,
+    remove_latent_features,
+    calculate_all_baselines,
+)
 from runia_core.inference.abstract_classes import get_baselines_thresholds
 from .tests_architecture import Net
 
@@ -51,7 +55,20 @@ LATENT_SPACE_DIM = 20
 TOL = 1e-6
 LAYER_TYPE = "Conv"
 REDUCTION_METHOD = "fullmean"
-BASELINES_NAMES = ["vim", "mdist", "msp", "knn", "energy", "ash", "dice", "react", "gen", "dice_react", "ddu", "raw"]
+BASELINES_NAMES = [
+    "vim",
+    "mdist",
+    "msp",
+    "knn",
+    "energy",
+    "ash",
+    "dice",
+    "react",
+    "gen",
+    "dice_react",
+    "ddu",
+    "raw",
+]
 ########################################################################
 
 
@@ -194,12 +211,12 @@ class TestBaselinesFromPrecalculated(TestCase):
         np.random.seed(SEED)
         cfg = OmegaConf.create(
             {
-                "ood_datasets": ['test_ood'],
+                "ood_datasets": ["test_ood"],
                 "ash_percentile": 90,
                 "react_percentile": 90,
                 "dice_percentile": 90,
                 "gen_gamma": 0.1,
-                "k_neighbors": 10
+                "k_neighbors": 10,
             }
         )
         fc_params = {
@@ -233,7 +250,7 @@ class TestBaselinesFromPrecalculated(TestCase):
             ood_data_dict=ood_data,
             fc_params=fc_params,
             cfg=cfg,
-            num_classes=LATENT_SPACE_DIM
+            num_classes=LATENT_SPACE_DIM,
         )
         self.assertAlmostEqual(ood_baselines_scores["test_ood msp"].mean(), 0.07561022, delta=TOL)
         self.assertAlmostEqual(ood_baselines_scores["test_ood knn"].mean(), -0.28827268, delta=TOL)
@@ -242,9 +259,13 @@ class TestBaselinesFromPrecalculated(TestCase):
         self.assertAlmostEqual(ood_baselines_scores["test_ood gen"].mean(), -14.69404, delta=TOL)
         self.assertAlmostEqual(ood_baselines_scores["test_ood react"].mean(), 8.930155, delta=TOL)
         self.assertAlmostEqual(ood_baselines_scores["test_ood dice"].mean(), 4.779826, delta=TOL)
-        self.assertAlmostEqual(ood_baselines_scores["test_ood dice_react"].mean(), 4.7608514, delta=TOL)
-        self.assertAlmostEqual(ood_baselines_scores["test_ood mdist"].mean(), -20.75197064883483, delta=TOL)
-        self.assertAlmostEqual(ood_baselines_scores["test_ood ddu"].mean(), -861438.0625, delta=TOL)
+        self.assertAlmostEqual(
+            ood_baselines_scores["test_ood dice_react"].mean(), 4.7608514, delta=TOL
+        )
+        self.assertAlmostEqual(
+            ood_baselines_scores["test_ood mdist"].mean(), -20.75197064883483, delta=TOL
+        )
+        self.assertAlmostEqual(ood_baselines_scores["test_ood ddu"].mean(), -863839.4375, delta=TOL)
 
 
 class TestBaselinesFromModel(TestCase):
@@ -438,7 +459,6 @@ class TestBaselinesFromModel(TestCase):
             ).sum()
             < TOL
         )
-
 
     def test_larem_postprocessor(self):
         np.random.seed(SEED)

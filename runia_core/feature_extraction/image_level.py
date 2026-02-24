@@ -353,9 +353,7 @@ class MCDSamplesExtractor(Extractor):
                         dl_imgs_latent_mcd_samples.append(latent_samples)
                         raw_predictions.extend(raw_preds)
                     else:
-                        dl_imgs_latent_mcd_samples.append(
-                            self._get_samples_one_image(image=image)
-                        )
+                        dl_imgs_latent_mcd_samples.append(self._get_samples_one_image(image=image))
                     # Update progress bar
                     pbar.update(1)
             dl_imgs_latent_mcd_samples_t = torch.cat(dl_imgs_latent_mcd_samples, dim=0)

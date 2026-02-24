@@ -872,7 +872,9 @@ class KNN(OodPostprocessor):
         kth_scores = []
         for feat in test_data:
             latent_rep_normed = normalizer(feat.reshape(1, -1))
-            latent_rep_normed = np.ascontiguousarray(np.asarray(latent_rep_normed).astype(np.float32))
+            latent_rep_normed = np.ascontiguousarray(
+                np.asarray(latent_rep_normed).astype(np.float32)
+            )
             D, _ = self.index.search(latent_rep_normed, self.k_neighbors)
             kth_dist = -D[:, -1]
             kth_scores.append(kth_dist)

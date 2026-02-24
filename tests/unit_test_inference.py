@@ -169,46 +169,39 @@ class TestOodPostprocessor(unittest.TestCase):
         """Set up test fixtures."""
         torch.manual_seed(SEED)
         np.random.seed(SEED)
-        self.method_name = "test_method"
         logger.info("Setting up TestOodPostprocessor")
 
     def test_ood_postprocessor_initialization(self):
         """Test OodPostprocessor initialization."""
         # Test with flip_sign=True
-        postprocessor = OodPostprocessor(method_name=self.method_name, flip_sign=True)
+        postprocessor = OodPostprocessor(flip_sign=True)
 
-        self.assertEqual(postprocessor.method_name, self.method_name)
         self.assertTrue(postprocessor.flip_sign)
         self.assertIsNone(postprocessor.threshold)
         self.assertFalse(postprocessor._setup_flag)
 
         # Test with flip_sign=False and config
         cfg = DictConfig({"param1": "value1"})
-        postprocessor_no_flip = OodPostprocessor(
-            method_name=self.method_name, flip_sign=False, cfg=cfg
-        )
+        postprocessor_no_flip = OodPostprocessor(flip_sign=False, cfg=cfg)
 
         self.assertFalse(postprocessor_no_flip.flip_sign)
 
     def test_flip_sign_fn_with_dict(self):
         """Test flip_sign_fn with dictionary input."""
-        postprocessor = OodPostprocessor(method_name=self.method_name, flip_sign=True)
+        postprocessor = OodPostprocessor(flip_sign=True)
 
         test_scores = {
-            self.method_name: np.array([1.0, -2.0, 3.0]),
-            "other_method": np.array([4.0, 5.0, 6.0]),
+            "test_method": np.array([1.0, -2.0, 3.0]),
         }
 
         result = postprocessor.flip_sign_fn(test_scores)
 
         expected_flipped = np.array([-1.0, 2.0, -3.0])
-        np.testing.assert_array_almost_equal(result[self.method_name], expected_flipped)
-        # Other method should remain unchanged
-        np.testing.assert_array_almost_equal(result["other_method"], np.array([4.0, 5.0, 6.0]))
+        np.testing.assert_array_almost_equal(result["test_method"], expected_flipped)
 
     def test_flip_sign_fn_with_array(self):
         """Test flip_sign_fn with numpy array input."""
-        postprocessor = OodPostprocessor(method_name=self.method_name, flip_sign=True)
+        postprocessor = OodPostprocessor(flip_sign=True)
 
         test_scores = np.array([1.0, -2.0, 3.0, -4.0])
         result = postprocessor.flip_sign_fn(test_scores)
@@ -218,7 +211,7 @@ class TestOodPostprocessor(unittest.TestCase):
 
     def test_flip_sign_fn_no_flip(self):
         """Test flip_sign_fn when flip_sign is False."""
-        postprocessor = OodPostprocessor(method_name=self.method_name, flip_sign=False)
+        postprocessor = OodPostprocessor(flip_sign=False)
 
         test_scores = np.array([1.0, -2.0, 3.0])
         result = postprocessor.flip_sign_fn(test_scores)
@@ -227,7 +220,7 @@ class TestOodPostprocessor(unittest.TestCase):
 
     def test_flip_sign_fn_invalid_input(self):
         """Test flip_sign_fn with invalid input type."""
-        postprocessor = OodPostprocessor(method_name=self.method_name, flip_sign=True)
+        postprocessor = OodPostprocessor(flip_sign=True)
 
         with self.assertRaises(ValueError) as context:
             # Test with invalid input type (intentionally passing wrong type)
@@ -238,10 +231,10 @@ class TestOodPostprocessor(unittest.TestCase):
 
     def test_set_threshold(self):
         """Test set_threshold method."""
-        postprocessor = OodPostprocessor(method_name=self.method_name, flip_sign=False)
+        postprocessor = OodPostprocessor(flip_sign=False)
 
         # Mock the get_baselines_thresholds function
-        test_scores = {self.method_name: np.array([0.1, 0.3, 0.5, 0.7, 0.9])}
+        test_scores = np.array([0.1, 0.3, 0.5, 0.7, 0.9])
 
         # Since we can't easily mock the external function, we'll test the method structure
         try:

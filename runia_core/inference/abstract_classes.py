@@ -24,7 +24,7 @@ __all__ = [
     "InferenceModule",
     "ProbabilisticInferenceModule",
     "ObjectDetectionInference",
-    "get_baselines_thresholds"
+    "get_baselines_thresholds",
 ]
 
 
@@ -141,8 +141,6 @@ class OodPostprocessor(Postprocessor):
     Attributes:
         flip_sign (bool): Indicates whether the scores should be inverted
             (multiplied by -1).
-        method_name (str): The name of the processing method to be used for
-            handling OOD scores.
         threshold (Union[float, None]): The threshold value for the method.
             Typically used for OOD decision-making.
     """
@@ -180,7 +178,8 @@ class OodPostprocessor(Postprocessor):
         """
         if self.flip_sign:
             if isinstance(scores, dict):
-                scores[self.method_name] = scores[self.method_name] * -1
+                for method, values in scores.items():
+                    scores[method] = values * -1
             elif isinstance(scores, ndarray):
                 scores = scores * -1
             else:
@@ -200,7 +199,9 @@ class OodPostprocessor(Postprocessor):
             z_score_percentile (float): A scalar multiplier corresponding to the z-score cutoff
                 (default 1.645 approximates the one-sided 95% quantile).
         """
-        self.threshold = get_method_threshold(scores=ind_test_scores, z_score_percentile=z_score_percentile)
+        self.threshold = get_method_threshold(
+            scores=ind_test_scores, z_score_percentile=z_score_percentile
+        )
         self._setup_flag = True
 
     def setup(self, ind_train_data: ndarray, **kwargs) -> None:

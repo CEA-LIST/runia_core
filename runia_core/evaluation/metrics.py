@@ -520,7 +520,9 @@ def subset_boxes(
         for im_id in non_empty_predictions_id["valid"]:
             non_emp_test[im_id] += 1
         avg_obj_per_id_img = int(ind_dict["valid latent_space_means"].shape[0] / len(non_emp_test))
-        choice_test = np.random.choice(list(non_emp_test.keys()), size=int(ood_limit/avg_obj_per_id_img), replace=False)
+        choice_test = np.random.choice(
+            list(non_emp_test.keys()), size=int(ood_limit / avg_obj_per_id_img), replace=False
+        )
         chosen_idx_valid = []
         choice_test = np.delete(choice_test, np.where(choice_test == "default_factory"))
         for i, idx in enumerate(non_empty_predictions_id["valid"]):

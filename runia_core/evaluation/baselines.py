@@ -12,13 +12,25 @@ from scipy.special import softmax
 from typing import Tuple, Dict, List, Union
 import numpy as np
 
-from runia_core.inference.postprocessors import DICE, ReAct, ASH, GEN, ViM, MSP, Energy, Mahalanobis, KNN, DDU, DICEReAct
+from runia_core.inference.postprocessors import (
+    DICE,
+    ReAct,
+    ASH,
+    GEN,
+    ViM,
+    MSP,
+    Energy,
+    Mahalanobis,
+    KNN,
+    DDU,
+    DICEReAct,
+)
 
 __all__ = [
     "remove_latent_features",
     "calculate_all_baselines",
     "get_labels_from_logits",
-    "baseline_name_dict"
+    "baseline_name_dict",
 ]
 
 
@@ -59,7 +71,7 @@ def get_dice_score_from_features(
     postp = DICE(
         flip_sign=False,
         dice_percentile=percentile,
-        num_classes=ind_data_dict["train logits"].shape[1]
+        num_classes=ind_data_dict["train logits"].shape[1],
     )
     postp.setup(
         ind_train_data=ind_data_dict["train features"],
@@ -169,7 +181,7 @@ def get_dice_react_score_from_features(
         flip_sign=False,
         dice_percentile=dice_percentile,
         react_percentile=react_percentile,
-        num_classes=ind_data_dict["train logits"].shape[1]
+        num_classes=ind_data_dict["train logits"].shape[1],
     )
     postp.setup(
         ind_train_data=ind_data_dict["train features"],
@@ -180,7 +192,9 @@ def get_dice_react_score_from_features(
     ind_data_dict["dice_react"] = postp.postprocess(test_data=ind_data_dict["valid features"])
     # OoD
     for ood_name in ood_names:
-        ood_baselines_dict[f"{ood_name} dice_react"] = postp.postprocess(test_data=ood_data_dict[f"{ood_name} features"])
+        ood_baselines_dict[f"{ood_name} dice_react"] = postp.postprocess(
+            test_data=ood_data_dict[f"{ood_name} features"]
+        )
 
     return ind_data_dict, ood_baselines_dict
 
@@ -230,7 +244,9 @@ def get_ash_score_from_features(
     ind_data_dict["ash"] = postp.postprocess(test_data=ind_data_dict["valid features"])
     # OoD
     for ood_name in ood_names:
-        ood_baselines_dict[f"{ood_name} ash"] = postp.postprocess(test_data=ood_data_dict[f"{ood_name} features"])
+        ood_baselines_dict[f"{ood_name} ash"] = postp.postprocess(
+            test_data=ood_data_dict[f"{ood_name} features"]
+        )
 
     return ind_data_dict, ood_baselines_dict
 
@@ -275,7 +291,9 @@ def get_gen_score_from_logits(
     )
     ind_data_dict["gen"] = postp.postprocess(test_data=ind_data_dict["valid logits"])
     for ood_name in ood_names:
-        ood_baselines_dict[f"{ood_name} gen"] = postp.postprocess(test_data=ood_data_dict[f"{ood_name} logits"])
+        ood_baselines_dict[f"{ood_name} gen"] = postp.postprocess(
+            test_data=ood_data_dict[f"{ood_name} logits"]
+        )
 
     return ind_data_dict, ood_baselines_dict
 
@@ -327,7 +345,8 @@ def calculate_vim_score(
 
     for ood_name in ood_names:
         ood_baselines_dict[f"{ood_name} vim"] = postp.postprocess(
-            test_data=ood_data_dict[f"{ood_name} features"], logits=ood_data_dict[f"{ood_name} logits"]
+            test_data=ood_data_dict[f"{ood_name} features"],
+            logits=ood_data_dict[f"{ood_name} logits"],
         )
 
     return ind_data_dict, ood_baselines_dict
@@ -366,7 +385,9 @@ def get_msp_score_from_logits(
     )
     ind_data_dict["msp"] = postp.postprocess(test_data=ind_data_dict["valid logits"])
     for ood_name in ood_names:
-        ood_baselines_dict[f"{ood_name} msp"] = postp.postprocess(test_data=ood_data_dict[f"{ood_name} logits"])
+        ood_baselines_dict[f"{ood_name} msp"] = postp.postprocess(
+            test_data=ood_data_dict[f"{ood_name} logits"]
+        )
 
     return ind_data_dict, ood_baselines_dict
 
@@ -437,7 +458,9 @@ def get_energy_score_from_logits(
     )
     ind_data_dict["energy"] = postp.postprocess(test_data=ind_data_dict["valid logits"])
     for ood_name in ood_names:
-        ood_baselines_dict[f"{ood_name} energy"] = postp.postprocess(test_data=ood_data_dict[f"{ood_name} logits"])
+        ood_baselines_dict[f"{ood_name} energy"] = postp.postprocess(
+            test_data=ood_data_dict[f"{ood_name} logits"]
+        )
 
     return ind_data_dict, ood_baselines_dict
 
@@ -483,7 +506,9 @@ def get_mahalanobis_score_from_features(
 
     ind_data_dict["mdist"] = postp.postprocess(test_data=ind_data_dict["valid features"])
     for ood_name in ood_names:
-        ood_baselines_dict[f"{ood_name} mdist"] = postp.postprocess(test_data=ood_data_dict[f"{ood_name} features"])
+        ood_baselines_dict[f"{ood_name} mdist"] = postp.postprocess(
+            test_data=ood_data_dict[f"{ood_name} features"]
+        )
 
     return ind_data_dict, ood_baselines_dict
 
@@ -531,7 +556,9 @@ def get_knn_score_from_features(
 
     # OoD datasets
     for ood_name in ood_names:
-        ood_baselines_dict[f"{ood_name} knn"] = postp.postprocess(test_data=ood_data_dict[f"{ood_name} features"])
+        ood_baselines_dict[f"{ood_name} knn"] = postp.postprocess(
+            test_data=ood_data_dict[f"{ood_name} features"]
+        )
 
     return ind_data_dict, ood_baselines_dict
 
@@ -577,7 +604,9 @@ def get_ddu_score_from_features(
     )
     ind_data_dict["ddu"] = postp.postprocess(test_data=ind_data_dict["valid features"])
     for ood_name in ood_names:
-        ood_baselines_dict[f"{ood_name} ddu"] = postp.postprocess(test_data=ood_data_dict[f"{ood_name} features"])
+        ood_baselines_dict[f"{ood_name} ddu"] = postp.postprocess(
+            test_data=ood_data_dict[f"{ood_name} features"]
+        )
 
     return ind_data_dict, ood_baselines_dict
 
@@ -895,5 +924,5 @@ baseline_name_dict = {
         "plot_title": "Raw predictions",
         "x_axis": "Raw predictions",
         "plot_name": "raw_predictions",
-    }
+    },
 }

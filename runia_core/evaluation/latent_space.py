@@ -1,5 +1,6 @@
 import os
 from typing import List, Union, Dict, Tuple
+from datetime import datetime
 
 import mlflow
 import numpy as np
@@ -65,7 +66,7 @@ def log_evaluate_larex(
         postprocessors = postprocessors_dict.keys()
     if visualize_score is not None:
         assert visualize_score in postprocessors_dict.keys()
-    current_date = cfg.log_dir.split("/")[-1]
+    current_date = datetime.today().strftime("%Y-%m-%d_%H:%M:%S")
     # Initialize df to store all the results
     overall_metrics_df = pd.DataFrame(
         columns=[

@@ -119,6 +119,8 @@ def normalizer(x):
 DICE Code taken from https://github.com/deeplearning-wisc/dice/blob/master/models/route.py
 All credits to authors
 """
+
+
 class RouteDICE(torch.nn.Linear):
     """
     Class to replace the penultimate fully connected layer of a network in order to use the

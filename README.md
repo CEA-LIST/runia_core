@@ -10,6 +10,9 @@
     <a href="https://github.com/psf/black">
         <img src="https://img.shields.io/badge/code%20style-black-000000.svg">
     </a>
+    <a href="./htmlcov/index.html">
+        <img src="./coverage-badge.svg?dummy=8484744">
+    </a>
     <img src="https://img.shields.io/badge/version-2.0.0-blue">
 </div>
 <br>
@@ -56,7 +59,7 @@
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd runia
+cd runia_core
 
 # Create a virtual environment (recommended)
 python -m venv runia_env
@@ -134,7 +137,7 @@ prediction, confidence_score = inference_module.get_score(test_image, layer_hook
 
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
-from runia.llm_uncertainty import compute_uncertainties
+from runia_core.llm_uncertainty import compute_uncertainties
 
 # Load model and tokenizer
 tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")
@@ -193,9 +196,12 @@ The library is focused on latent space methods but can compute 10+ other methods
 ```python
 import torch
 from omegaconf import OmegaConf
-from runia.feature_extraction import Hook, BoxFeaturesExtractor, get_aggregated_data_dict, associate_precalculated_baselines_with_raw_predictions
-from runia.evaluation import log_evaluate_larex
-from runia.baselines import calculate_all_baselines, remove_latent_features, get_baselines_thresholds
+from runia_core.feature_extraction import Hook, BoxFeaturesExtractor, get_aggregated_data_dict,
+
+associate_precalculated_baselines_with_raw_predictions
+from runia_core.evaluation import log_evaluate_larex
+from runia_core.baselines import calculate_all_baselines, remove_latent_features
+from runia_core.inference.abstract_classes import get_baselines_thresholds
 
 # Setup
 BASELINES_NAMES = ["msp", "gen", "energy", "mdist", "knn", "ddu"]
@@ -319,8 +325,8 @@ Deploy OoD detection in production with the inference module, using the best pos
 
 ```python
 import torch
-from runia.feature_extraction import get_aggregated_data_dict
-from runia.inference import postprocessors_dict, ObjectLevelInference, postprocessor_input_dict
+from runia_core.feature_extraction import get_aggregated_data_dict
+from runia_core.inference import postprocessors_dict, ObjectLevelInference, postprocessor_input_dict
 
 METHOD = "energy"  # or "MD" for LaREM, "KDE" for LaRED, or any other method from the evaluation pipeline
 LATENT_SPACE_METHOD=False  # Set to True if using latent space postprocessors (LaREM or LaRED), False for other methods
@@ -377,7 +383,7 @@ with torch.no_grad():
 RunIA supports 15+ baseline OoD detection methods:
 
 ```python
-from runia.baselines import compute_baseline_from_model
+from runia_core.baselines import compute_baseline_from_model
 
 # Available methods: 'msp', 'energy', 'mdist', 'knn', 'vim', 'ddu', 'dice', 'react', etc.
 baseline_scores = compute_baseline_from_model(
@@ -394,7 +400,7 @@ Detect hallucinations and measure uncertainty in LLM outputs:
 
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
-from runia.llm_uncertainty import compute_uncertainties
+from runia_core.llm_uncertainty import compute_uncertainties
 
 # Load model
 tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B-Instruct")

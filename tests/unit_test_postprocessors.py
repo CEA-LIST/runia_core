@@ -458,14 +458,13 @@ class TestEnergyPostprocessor(unittest.TestCase):
         """Set up test fixtures."""
         torch.manual_seed(SEED)
         np.random.seed(SEED)
-        self.energy_processor = Energy(method_name="energy", flip_sign=True)
+        self.energy_processor = Energy(flip_sign=True)
         _, _, self.train_logits = generate_test_data(seed=SEED)
         _, _, self.test_logits = generate_test_data(seed=SEED + 1)
         logger.info("Setting up TestEnergyPostprocessor")
 
     def test_energy_initialization(self):
         """Test Energy postprocessor initialization."""
-        self.assertEqual(self.energy_processor.method_name, "energy")
         self.assertTrue(self.energy_processor.flip_sign)
         self.assertFalse(self.energy_processor._setup_flag)
 
@@ -551,16 +550,13 @@ class TestGENPostprocessor(unittest.TestCase):
         """Set up test fixtures."""
         torch.manual_seed(SEED)
         np.random.seed(SEED)
-        self.gen_processor = GEN(
-            method_name="gen", flip_sign=True, gamma=0.1, num_classes=TEST_NUM_CLASSES
-        )
+        self.gen_processor = GEN(flip_sign=True, gamma=0.1, num_classes=TEST_NUM_CLASSES)
         _, _, self.train_logits = generate_test_data(seed=SEED)
         _, _, self.test_logits = generate_test_data(seed=SEED + 1)
         logger.info("Setting up TestGENPostprocessor")
 
     def test_gen_initialization(self):
         """Test GEN postprocessor initialization."""
-        self.assertEqual(self.gen_processor.method_name, "gen")
         self.assertTrue(self.gen_processor.flip_sign)
         self.assertEqual(self.gen_processor.gamma, 0.1)
         self.assertEqual(self.gen_processor.num_classes, TEST_NUM_CLASSES)
@@ -618,7 +614,7 @@ class TestDDUPostprocessor(unittest.TestCase):
         """Set up test fixtures."""
         torch.manual_seed(SEED)
         np.random.seed(SEED)
-        self.ddu_processor = DDU(method_name="ddu", flip_sign=True, num_classes=TEST_NUM_CLASSES)
+        self.ddu_processor = DDU(flip_sign=True, num_classes=TEST_NUM_CLASSES)
         self.train_features, self.train_labels, _ = generate_test_data(seed=SEED)
         self.valid_features, _, _ = generate_test_data(seed=SEED + 2)
         self.test_features, _, _ = generate_test_data(seed=SEED + 1)
@@ -626,7 +622,6 @@ class TestDDUPostprocessor(unittest.TestCase):
 
     def test_ddu_initialization(self):
         """Test DDU postprocessor initialization."""
-        self.assertEqual(self.ddu_processor.method_name, "ddu")
         self.assertTrue(self.ddu_processor.flip_sign)
         self.assertEqual(self.ddu_processor.num_classes, TEST_NUM_CLASSES)
         self.assertIsNone(self.ddu_processor.gmm)
@@ -700,9 +695,7 @@ class TestMahalanobisPostprocessor(unittest.TestCase):
         """Set up test fixtures."""
         torch.manual_seed(SEED)
         np.random.seed(SEED)
-        self.maha_processor = Mahalanobis(
-            method_name="mahalanobis", flip_sign=True, num_classes=TEST_NUM_CLASSES
-        )
+        self.maha_processor = Mahalanobis(flip_sign=True, num_classes=TEST_NUM_CLASSES)
         self.train_features, self.train_labels, _ = generate_test_data(seed=SEED)
         self.valid_features, _, _ = generate_test_data(seed=SEED + 2)
         self.test_features, _, _ = generate_test_data(seed=SEED + 1)
@@ -710,7 +703,6 @@ class TestMahalanobisPostprocessor(unittest.TestCase):
 
     def test_mahalanobis_initialization(self):
         """Test Mahalanobis postprocessor initialization."""
-        self.assertEqual(self.maha_processor.method_name, "mahalanobis")
         self.assertTrue(self.maha_processor.flip_sign)
         self.assertEqual(self.maha_processor.num_classes, TEST_NUM_CLASSES)
         self.assertIsNone(self.maha_processor.class_mean)
@@ -814,7 +806,7 @@ class TestViMPostprocessor(unittest.TestCase):
         """Set up test fixtures."""
         torch.manual_seed(SEED)
         np.random.seed(SEED)
-        self.vim_processor = ViM(method_name="vim", flip_sign=True)
+        self.vim_processor = ViM(flip_sign=True)
         self.train_features, _, self.train_logits = generate_test_data(seed=SEED)
         self.valid_features, _, self.valid_logits = generate_test_data(seed=SEED + 2)
         self.test_features, _, self.test_logits = generate_test_data(seed=SEED + 1)
@@ -828,7 +820,6 @@ class TestViMPostprocessor(unittest.TestCase):
 
     def test_vim_initialization(self):
         """Test ViM postprocessor initialization."""
-        self.assertEqual(self.vim_processor.method_name, "vim")
         self.assertTrue(self.vim_processor.flip_sign)
         self.assertIsNone(self.vim_processor.u)
         self.assertIsNone(self.vim_processor.DIM)
@@ -1051,8 +1042,8 @@ class TestPostprocessorIntegration(unittest.TestCase):
 
     def test_ood_postprocessors_flip_sign_consistency(self):
         """Test that OOD postprocessors handle flip_sign correctly."""
-        energy_flip = Energy(method_name="energy", flip_sign=True)
-        energy_no_flip = Energy(method_name="energy", flip_sign=False)
+        energy_flip = Energy(flip_sign=True)
+        energy_no_flip = Energy(flip_sign=False)
 
         energy_flip.setup(self.train_logits)
         energy_no_flip.setup(self.train_logits)

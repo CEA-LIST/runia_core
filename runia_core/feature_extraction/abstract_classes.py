@@ -19,7 +19,7 @@ SUPPORTED_OBJECT_DETECTION_ARCHITECTURES = [
     "owlv2",
     "rtdetr-backbone",
     "rtdetr-encoder",
-    "dino"
+    "dino",
 ]
 
 __all__ = [
