@@ -11,7 +11,7 @@
         <img src="https://img.shields.io/badge/code%20style-black-000000.svg">
     </a>
     <img src="tools/coverage/coverage-badge.svg">
-    <img src="https://img.shields.io/badge/version-2.0.0-blue">
+    <img src="https://img.shields.io/badge/version-0.2.0-blue">
 </div>
 <br>
 
@@ -19,7 +19,7 @@
 
 # Overview
 
-**RunIA** is an open-source Python library for uncertainty estimation and Out-of-Distribution (OoD) detection in AI models. It provides comprehensive tools for evaluating and deploying uncertainty estimation methods across computer vision tasks (image classification, object detection, semantic segmentation) and natural language processing (LLM hallucination detection).
+**RunIA-core** is an open-source Python library for uncertainty estimation and Out-of-Distribution (OoD) detection in AI models. It provides comprehensive tools for evaluating and deploying uncertainty estimation methods across computer vision tasks (image classification, object detection, semantic segmentation) and natural language processing (LLM hallucination detection).
 
 ## Key Features
 

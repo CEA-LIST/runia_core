@@ -1,0 +1,25 @@
+name: "CLA Assistant"
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  check-cla:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check if contributor has signed CLA
+        shell: bash
+        run: |
+          CONTRIBUTOR="${{ github.event.pull_request.user.login }}"
+          # Check if the username exists in the yaml file
+          if grep -q "$CONTRIBUTOR" CONTRIBUTORS.yaml; then
+            echo "Success: $CONTRIBUTOR has signed the CLA."
+            exit 0
+          else
+            echo "Error: $CONTRIBUTOR has not signed the CLA in CONTRIBUTORS.yaml."
+            echo "Please add your username to CONTRIBUTORS.yaml and commit it to this PR."
+            exit 1
+          fi
