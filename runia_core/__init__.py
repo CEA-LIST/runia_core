@@ -25,7 +25,7 @@ __deprecated_attrs__ = {}
 __expired_functions__ = {}
 
 
-def __getattr__(attr):
+def __getattr__(attr):  # pragma: no cover
     # Warn for expired attributes, and return a dummy function
     # that always raises an exception.
     import warnings

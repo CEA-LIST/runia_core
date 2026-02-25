@@ -36,7 +36,7 @@ from runia_core.evaluation.baselines import (
     calculate_all_baselines,
 )
 from runia_core.inference.abstract_classes import get_baselines_thresholds
-from .tests_architecture import Net
+from tests_architecture import Net
 
 
 # Configure module-level logger

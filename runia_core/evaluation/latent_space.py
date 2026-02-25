@@ -38,6 +38,7 @@ def log_evaluate_larex(
     visualize_score: Union[None, str] = None,
     postprocessors: Union[None, List[str]] = None,
     save_csv: bool = False,
+    save_plots_to_local: bool = False,
 ) -> Tuple[pd.DataFrame, Dict[str, Dict[str, float]], Dict[str, float], Dict[str, np.ndarray]]:
     """
     This function performs the evaluation of InD vs OoD for One InD dataset and several OoD datasets, testing the
@@ -58,6 +59,7 @@ def log_evaluate_larex(
         postprocessors: List of postprocessors to apply to precalculated ls samples.
             Default: ["LaRED", "LaREM", "LaREK"]
         save_csv: Boolean indicating whether to save the evaluation results in a csv file.
+        save_plots_to_local: Boolean indicating whether to save the plots in a local folder
 
     Returns:
         Pandas Dataframe with the evaluation metrics
@@ -79,7 +81,7 @@ def log_evaluate_larex(
     )
     # Save to a local folder instead
     logs_folder = f"./results_logs/ind_{cfg.ind_dataset}/{mlflow_run_name}"
-    if not mlflow_logging:
+    if not mlflow_logging and save_plots_to_local:
         os.makedirs(logs_folder, exist_ok=False)
     #################################################################
     # Baselines analysis
@@ -93,7 +95,7 @@ def log_evaluate_larex(
             ood_datasets=cfg.ood_datasets,
             overall_metrics_df=overall_metrics_df,
             mlflow_logging=mlflow_logging,
-            logs_folder=logs_folder,
+            logs_folder=None if not save_plots_to_local else logs_folder,
         )
     ######################################################
     # Evaluate OoD detection methods LaRx
@@ -126,7 +128,7 @@ def log_evaluate_larex(
         for plot_name, plot in postp_scores_plots_dict.items():
             if mlflow_logging:
                 mlflow.log_figure(figure=plot.figure, artifact_file=f"figs/{plot_name}.png")
-            else:
+            elif save_plots_to_local:
                 plot.figure.savefig(logs_folder + f"/{plot_name}.png")
 
     # #################### Perform evaluation with PCA reduced vectors #####################
@@ -200,7 +202,7 @@ def log_evaluate_larex(
         cfg=cfg,
         ind_data=ind_data_dict,
         ood_data=ood_data_dict,
-        logs_folder=logs_folder,
+        logs_folder=None if not save_plots_to_local else logs_folder,
         log_mlflow=mlflow_logging,
     )
     print(f"Best postprocessor thresholds: {postprocessor_thresholds}")
@@ -213,7 +215,7 @@ def log_evaluate_larex(
         best_postprocessors_dict=best_postprocessors_dict,
         mlflow_logging=mlflow_logging,
         ind_dataset=cfg.ind_dataset,
-        logs_folder=logs_folder,
+        logs_folder=None if not save_plots_to_local else logs_folder,
         baselines_names=baselines_names,
     )
     return overall_metrics_df, best_postprocessors_dict, postprocessor_thresholds, ood_data_dict
@@ -227,7 +229,7 @@ def log_baselines(
     ood_datasets: List[str],
     overall_metrics_df: pd.DataFrame,
     mlflow_logging: bool,
-    logs_folder: str,
+    logs_folder: Union[str, None],
 ) -> pd.DataFrame:
     """
     Log baselines if previously calculated.
@@ -290,7 +292,7 @@ def log_baselines(
                 figure=pred_score_plot.figure,
                 artifact_file=f"figs/{experiment['plot_name']}.png",
             )
-        else:
+        elif logs_folder is not None:
             pred_score_plot.figure.savefig(logs_folder + f"/{experiment['plot_name']}.png")
 
     # Log all baselines experiments
@@ -327,7 +329,7 @@ def plot_roc_curves(
     best_postprocessors_dict: Dict,
     mlflow_logging: bool,
     ind_dataset: str,
-    logs_folder: str,
+    logs_folder: Union[str, None],
     baselines_names: List[str],
 ) -> None:
     """
@@ -393,7 +395,7 @@ def plot_roc_curves(
         if mlflow_logging:
             # Log the plot with mlflow
             mlflow.log_figure(figure=roc_curve, artifact_file=f"figs/roc_{ood_dataset}.png")
-        else:
+        elif logs_folder is not None:
             roc_curve.savefig(logs_folder + f"/roc_{ood_dataset}.png")
 
         for postprocessor in postprocessors:
@@ -408,7 +410,7 @@ def plot_roc_curves(
                     figure=roc_curve_pca_postp,
                     artifact_file=f"figs/roc_{ood_dataset}_pca_{postprocessor}.png",
                 )
-            else:
+            elif logs_folder is not None:
                 roc_curve_pca_postp.savefig(
                     logs_folder + f"/roc_{ood_dataset}_pca_{postprocessor}.png"
                 )
@@ -520,7 +522,7 @@ def _get_best_post_processor_thresholds(
     cfg: DictConfig,
     ind_data: Dict[str, np.ndarray],
     ood_data: Dict[str, np.ndarray],
-    logs_folder: str,
+    logs_folder: Union[str, None],
     log_mlflow: bool = False,
 ) -> Tuple[Dict[str, float], Dict[str, np.ndarray]]:
     """
@@ -595,7 +597,7 @@ def _get_best_post_processor_thresholds(
             mlflow.log_metric(f"Threshold_{best_postp}", threshold_postp)
             # Plot empirical score distribution and threshold
             mlflow.log_figure(figure=fig, artifact_file=f"figs/{best_postp}_score_threshold.png")
-        else:
+        elif logs_folder is not None:
             fig.savefig(f"{logs_folder}/{best_postp}_score_threshold.png")
 
     return postprocessor_thresholds, ood_data

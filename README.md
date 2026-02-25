@@ -10,9 +10,7 @@
     <a href="https://github.com/psf/black">
         <img src="https://img.shields.io/badge/code%20style-black-000000.svg">
     </a>
-    <a href="./htmlcov/index.html">
-        <img src="./coverage-badge.svg?dummy=8484744">
-    </a>
+    <img src="tools/coverage/coverage-badge.svg">
     <img src="https://img.shields.io/badge/version-2.0.0-blue">
 </div>
 <br>
@@ -100,9 +98,9 @@ uv run your_script.py
 
 ```python
 import torch
-from runia.evaluation import Hook, get_latent_representation_mcd_samples, get_dl_h_z
-from runia.inference import LaRExInference, MCSamplerModule, LaREMPostprocessor
-from runia import apply_pca_ds_split
+from runia_core.evaluation import Hook, get_latent_representation_mcd_samples, get_dl_h_z
+from runia_core.inference import LaRExInference, MCSamplerModule, LaREMPostprocessor
+from runia_core import apply_pca_ds_split
 
 # Setup model with dropout/dropblock layer
 model = YourModel()

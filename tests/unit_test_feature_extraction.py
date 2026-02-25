@@ -8,7 +8,7 @@ from runia_core.feature_extraction import (
     apply_dropout,
     Hook,
 )
-from .tests_architecture import Net
+from tests_architecture import Net
 import torch
 import torchvision
 

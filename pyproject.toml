@@ -1,6 +1,6 @@
 [project]
 name = "runia_core"
-version = "2.0.0"
+version = "0.2.0"
 description = "Runtime Uncertainty estimation for AI models"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -61,4 +61,13 @@ omit = [
     ".version.py",
     ".setup.py",
     ]
-source = ["runia_core"]
+source = ["runia_core", "tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "warnings",
+    "pass",
+    "rank_zero_warn",
+    "raise NotImplementedError",
+]

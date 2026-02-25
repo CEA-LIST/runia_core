@@ -20,7 +20,7 @@ from runia_core.inference import MDLatentSpace, LaRExInference
 from runia_core.evaluation.latent_space import log_evaluate_postprocessors
 from runia_core.dimensionality_reduction import apply_pca_ds_split, apply_pca_transform
 from runia_core.feature_extraction import apply_dropout, Hook
-from .tests_architecture import Net
+from tests_architecture import Net
 
 #########################################################################
 # PARAMETERS
