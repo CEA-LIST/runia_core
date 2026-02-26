@@ -5,5 +5,7 @@
 signees:
   - github_username: "danielm322"
     date_signed: "2026-02-24"
+  - github_username: "dm274516"
+    date_signed: "2026-02-24"
   - github_username: "FabioArnez"
     date_signed: "2026-02-26"
