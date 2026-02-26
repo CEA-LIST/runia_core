@@ -55,9 +55,7 @@ class TestReduceFeaturesToROIs(TestCase):
         latent_sample = [torch.rand(1, NUM_FEATURE_CHANNELS, 60, 80, device=self.device)]
 
         # Create mock bounding boxes (num_boxes, 4) in xyxy format
-        boxes = Tensor(
-            [[50, 50, 150, 150], [200, 200, 350, 350]]
-        ).to(self.device)
+        boxes = Tensor([[50, 50, 150, 150], [200, 200, 350, 350]]).to(self.device)
 
         output_sizes = [ROI_OUTPUT_SIZE]
 
@@ -82,9 +80,7 @@ class TestReduceFeaturesToROIs(TestCase):
     def test_reduce_features_to_rois_with_stds(self):
         """Test _reduce_features_to_rois with standard deviations"""
         latent_sample = [torch.rand(1, NUM_FEATURE_CHANNELS, 60, 80, device=self.device)]
-        boxes = Tensor(
-            [[50, 50, 150, 150], [200, 200, 350, 350]]
-        ).to(self.device)
+        boxes = Tensor([[50, 50, 150, 150], [200, 200, 350, 350]]).to(self.device)
         output_sizes = [ROI_OUTPUT_SIZE]
 
         means, stds = _reduce_features_to_rois(
@@ -456,9 +452,9 @@ class TestEdgeCasesAndErrors(TestCase):
         """Test _reduce_features_to_rois with large number of detected objects"""
         latent_sample = [torch.rand(1, NUM_FEATURE_CHANNELS, 120, 160, device=self.device)]
         n_objects = 10
-        boxes = Tensor(
-            [[i * 10, i * 10, i * 10 + 50, i * 10 + 50] for i in range(n_objects)]
-        ).to(self.device)
+        boxes = Tensor([[i * 10, i * 10, i * 10 + 50, i * 10 + 50] for i in range(n_objects)]).to(
+            self.device
+        )
         output_sizes = [ROI_OUTPUT_SIZE]
 
         means, stds = _reduce_features_to_rois(
@@ -1095,7 +1091,6 @@ class TestIntegrationScenarios(TestCase):
             self.assertEqual(std.shape[0], 1)
             self.assertEqual(mean.shape[1], 128)
             self.assertEqual(std.shape[1], 128)
-
 
 
 if __name__ == "__main__":

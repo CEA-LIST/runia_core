@@ -22,11 +22,11 @@
 **RunIA-core** is an open-source Python library for uncertainty estimation and Out-of-Distribution (OoD) detection in AI models. It provides comprehensive tools for evaluating and deploying uncertainty estimation methods across computer vision tasks (image classification, object detection, semantic segmentation) and natural language processing (LLM hallucination detection).
 
 ## Key Features
-
+- **Object Detection support**: Beyond Image classification, RunIA-core includes modules for object detection architectures (Faster RCNN, YOLOv8, RT-DETR, Deformable DETR, OWLv2) and semantic segmentation (DeepLabv3+, U-Net)
 - **Latent Space Uncertainty Estimation**: LaRED (Latent Representations Density) and LaREM (Latent Representations Mahalanobis) methods for OoD detection
-- **Monte Carlo Dropout (MCD)**: Epistemic uncertainty estimation through MC sampling
 - **Multiple Baseline Methods**: Support for 15+ baseline OoD detection methods (MSP, Energy, Mahalanobis, kNN, ViM, DDU, DICE, ReAct, and more)
 - **LLM Uncertainty**: Hallucination detection with methods like semantic entropy, RAUQ, perplexity, and eigen scores
+- **Monte Carlo Dropout (MCD)**: Epistemic uncertainty estimation through MC sampling and entropy computation
 - **Feature Extraction**: Image-level and object-level feature extraction for various architectures
 - **Flexible Inference**: Production-ready inference modules for real-time OoD detection
 - **Comprehensive Evaluation**: Built-in metrics (AUROC, AUPR, FPR@95) and visualization tools
@@ -52,7 +52,8 @@
 - Python 3.9 or higher
 - CUDA-capable GPU (recommended for computer vision tasks and LLMs)
 
-### Using pip
+<details>
+<summary>Using pip</summary>
 
 ```bash
 # Clone the repository
@@ -69,8 +70,10 @@ pip install -r requirements.txt
 # Install the package
 pip install .
 ```
+</details>
 
-### Using conda
+<details>
+<summary>Using conda</summary>
 
 ```bash
 # Create a conda environment
@@ -81,8 +84,11 @@ conda activate runia_env
 pip install -r requirements.txt
 pip install .
 ```
+</details>
 
-### Using uv
+<details>
+<summary>Using uv</summary>
+
 See [uv documentation](https://docs.astral.sh/uv/) for installation instructions. Dependencies are installed on first run. 
 Therefore, you can run any script with:
 
@@ -90,6 +96,8 @@ Therefore, you can run any script with:
 # Directly run any script (dependencies are installed on first run)
 uv run your_script.py
 ```
+</details>
+
 ---
 
 ## Quick Start
@@ -183,6 +191,8 @@ In this case, the latent space methods will be applied on the extracted features
 ---
 
 ## Usage Examples
+<details>
+<summary>OOD detection in Object Detection. Evaluation Pipeline</summary>
 
 ### Computer Vision: OoD Detection in Object Detection
 
@@ -194,11 +204,8 @@ The library is focused on latent space methods but can compute 10+ other methods
 ```python
 import torch
 from omegaconf import OmegaConf
-from runia_core.feature_extraction import Hook, BoxFeaturesExtractor, get_aggregated_data_dict,
-
-associate_precalculated_baselines_with_raw_predictions
-from runia_core.evaluation import log_evaluate_larex
-from runia_core.baselines import calculate_all_baselines, remove_latent_features
+from runia_core.feature_extraction import Hook, BoxFeaturesExtractor, get_aggregated_data_dict, associate_precalculated_baselines_with_raw_predictions
+from runia_core.evaluation import log_evaluate_larex, calculate_all_baselines, remove_latent_features
 from runia_core.inference.abstract_classes import get_baselines_thresholds
 
 # Setup
@@ -316,6 +323,10 @@ metrics_df, best_postprocessors_dict, postprocessor_thresholds, aggregated_ood_d
 )
 print(metrics_df)
 ```
+</details>
+
+<details>
+<summary>OOD detection in Object Detection. Inference pipeline</summary>
 
 #### 2. Inference Pipeline
 
@@ -327,7 +338,7 @@ from runia_core.feature_extraction import get_aggregated_data_dict
 from runia_core.inference import postprocessors_dict, ObjectLevelInference, postprocessor_input_dict
 
 METHOD = "energy"  # or "MD" for LaREM, "KDE" for LaRED, or any other method from the evaluation pipeline
-LATENT_SPACE_METHOD=False  # Set to True if using latent space postprocessors (LaREM or LaRED), False for other methods
+LATENT_SPACE_METHOD = False  # Set to True if using latent space postprocessors (LaREM or LaRED), False for other methods
 INFERENCE_THRESHOLD = 0.5  # Set the confidence threshold for predictions to be considered in inference (can be tuned based on evaluation results)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -353,7 +364,7 @@ for split in ind_data_splits:
         probs_as_logits=False
     )
 
-postprocessor = postprocessors_dict[METHOD](method_name=METHOD, flip_sign=False)
+postprocessor = postprocessors_dict[METHOD](flip_sign=False)
 postprocessor.setup(ind_train_data=aggregated_ind_data_dict["valid logits"])
 
 # Load model
@@ -375,22 +386,10 @@ with torch.no_grad():
     for idx, input_im in enumerate(my_data_loader):
         predictions, scores = inference_module.get_score(input_im, predict_conf=INFERENCE_THRESHOLD)
 ```
+</details>
 
-#### 3. Using Baseline Methods
-
-RunIA supports 15+ baseline OoD detection methods:
-
-```python
-from runia_core.baselines import compute_baseline_from_model
-
-# Available methods: 'msp', 'energy', 'mdist', 'knn', 'vim', 'ddu', 'dice', 'react', etc.
-baseline_scores = compute_baseline_from_model(
-    model=model,
-    dataloader=test_loader,
-    method_name='energy',  # Energy-based OoD detection
-    device='cuda'
-)
-```
+<details>
+<summary>LLM uncertainty estimation for hallucination detection</summary>
 
 ### LLM Uncertainty Estimation
 
@@ -440,6 +439,7 @@ text, scores = compute_uncertainties(
 print(f"Generated: {text}")
 print(f"Uncertainty Scores: {scores}")
 ```
+</details>
 
 ---
 
