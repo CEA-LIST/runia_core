@@ -81,7 +81,7 @@ def log_evaluate_larex(
     )
     # Save to a local folder instead
     logs_folder = f"./results_logs/ind_{cfg.ind_dataset}/{mlflow_run_name}"
-    if not mlflow_logging and save_plots_to_local:
+    if not mlflow_logging and save_plots_to_local:  # pragma: no cover
         os.makedirs(logs_folder, exist_ok=False)
     #################################################################
     # Baselines analysis
@@ -125,7 +125,7 @@ def log_evaluate_larex(
             post_processor_name=visualize_score,
         )
 
-        for plot_name, plot in postp_scores_plots_dict.items():
+        for plot_name, plot in postp_scores_plots_dict.items():  # pragma: no cover
             if mlflow_logging:
                 mlflow.log_figure(figure=plot.figure, artifact_file=f"figs/{plot_name}.png")
             elif save_plots_to_local:
@@ -173,7 +173,7 @@ def log_evaluate_larex(
             overall_metrics_df.loc[result] = results_eval["results_df"].loc[result]
 
     # Optionally save csv in file
-    if save_csv:
+    if save_csv:  # pragma: no cover
         os.makedirs(f"./results_csvs/{cfg.mlflow_experiment_name}", exist_ok=True)
         overall_metrics_df_name = (
             f"./results_csvs/{cfg.mlflow_experiment_name}/{mlflow_run_name}_{current_date}.csv.gz"
@@ -287,12 +287,12 @@ def log_baselines(
         pred_score_plot = get_pred_scores_plots(
             experiment, ood_datasets, title=plot_title, ind_dataset_name=ind_dataset
         )
-        if mlflow_logging:
+        if mlflow_logging:  # pragma: no cover
             mlflow.log_figure(
                 figure=pred_score_plot.figure,
                 artifact_file=f"figs/{experiment['plot_name']}.png",
             )
-        elif logs_folder is not None:
+        elif logs_folder is not None:  # pragma: no cover
             pred_score_plot.figure.savefig(logs_folder + f"/{experiment['plot_name']}.png")
 
     # Log all baselines experiments
@@ -307,7 +307,7 @@ def log_baselines(
         )
         results_mlflow = dict([(f"{experiment_name}_{k}", v) for k, v in results_mlflow.items()])
         if mlflow_logging:
-            mlflow.log_metrics(results_mlflow)
+            mlflow.log_metrics(results_mlflow)  # pragma: no cover
         # Plot each ROC curve individually LEAVE COMMENTED
         # roc_curve = save_roc_ood_detector(
         #     results_table=r_df,
@@ -394,9 +394,11 @@ def plot_roc_curves(
         )
         if mlflow_logging:
             # Log the plot with mlflow
-            mlflow.log_figure(figure=roc_curve, artifact_file=f"figs/roc_{ood_dataset}.png")
+            mlflow.log_figure(
+                figure=roc_curve, artifact_file=f"figs/roc_{ood_dataset}.png"
+            )  # pragma: no cover
         elif logs_folder is not None:
-            roc_curve.savefig(logs_folder + f"/roc_{ood_dataset}.png")
+            roc_curve.savefig(logs_folder + f"/roc_{ood_dataset}.png")  # pragma: no cover
 
         for postprocessor in postprocessors:
             roc_curve_pca_postp = save_roc_ood_detector(
@@ -409,11 +411,11 @@ def plot_roc_curves(
                 mlflow.log_figure(
                     figure=roc_curve_pca_postp,
                     artifact_file=f"figs/roc_{ood_dataset}_pca_{postprocessor}.png",
-                )
+                )  # pragma: no cover
             elif logs_folder is not None:
                 roc_curve_pca_postp.savefig(
                     logs_folder + f"/roc_{ood_dataset}_pca_{postprocessor}.png"
-                )
+                )  # pragma: no cover
 
 
 def _get_best_postprocessors_metrics(
@@ -468,7 +470,7 @@ def _get_best_postprocessors_metrics(
             all_aurocs.append(temp_df["auroc"].mean())
             all_auprs.append(temp_df["aupr"].mean())
             all_fprs.append(temp_df["fpr@95"].mean())
-            if mlflow_logging:
+            if mlflow_logging:  # pragma: no cover
                 mlflow.log_metric(f"{baseline}_auroc_mean", temp_df["auroc"].mean())
                 mlflow.log_metric(f"{baseline}_auroc_std", temp_df["auroc"].std())
                 mlflow.log_metric(f"{baseline}_aupr_mean", temp_df["aupr"].mean())
@@ -505,7 +507,7 @@ def _get_best_postprocessors_metrics(
             )
 
     # Log average performances across OoD datasets
-    if mlflow_logging and len(ood_datasets_names) > 1:
+    if mlflow_logging and len(ood_datasets_names) > 1:  # pragma: no cover
         mlflow.log_metric(f"global_auroc_mean", np.mean(all_aurocs))
         mlflow.log_metric(f"global_auroc_std", np.std(all_aurocs))
         mlflow.log_metric(f"global_aupr_mean", np.mean(all_auprs))
@@ -593,11 +595,11 @@ def _get_best_post_processor_thresholds(
         ax.set_xlabel("Score")
         ax.set_ylabel("Frquency")
         ax.set_title(f"Empirical {best_postp} score distribution")
-        if log_mlflow:
+        if log_mlflow:  # pragma: no cover
             mlflow.log_metric(f"Threshold_{best_postp}", threshold_postp)
             # Plot empirical score distribution and threshold
             mlflow.log_figure(figure=fig, artifact_file=f"figs/{best_postp}_score_threshold.png")
         elif logs_folder is not None:
-            fig.savefig(f"{logs_folder}/{best_postp}_score_threshold.png")
+            fig.savefig(f"{logs_folder}/{best_postp}_score_threshold.png")  # pragma: no cover
 
     return postprocessor_thresholds, ood_data

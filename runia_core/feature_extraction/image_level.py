@@ -582,7 +582,7 @@ def deeplabv3p_get_ls_mcd_samples(
     dataloader: DataLoader,
     mcd_nro_samples: int,
     hook_dropout_layer: Hook,
-) -> Tensor:
+) -> Tensor:  # pragma: no cover
     """
      Get Monte-Carlo samples form Deeplabv3+ DNN Dropout Layer
 

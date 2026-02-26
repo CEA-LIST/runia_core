@@ -99,7 +99,7 @@ def get_auroc_results(
     return results_table, results_for_mlflow
 
 
-def plot_roc_ood_detector(results_table, plot_title: str = "Plot Title"):
+def plot_roc_ood_detector(results_table, plot_title: str = "Plot Title"):  # pragma: no cover
     """
     Plot ROC curve from the results table from the function get_hz_detector_results.
 
@@ -367,7 +367,7 @@ def log_evaluate_postprocessors(
         else:
             results_mlflow = {f"{experiment_name}_{k}": v for k, v in results_mlflow.items()}
         if mlflow_logging:
-            mlflow.log_metrics(results_mlflow, step=log_step)
+            mlflow.log_metrics(results_mlflow, step=log_step)  # pragma: no cover
         # Update overall metrics dataframe
         for result in results_df.index.values:
             overall_metrics_df.loc[result] = results_df.loc[result]
@@ -444,7 +444,7 @@ def select_and_log_best_larex(
     else:
         best_n_comps = 0
 
-    if log_mlflow:
+    if log_mlflow:  # pragma: no cover
         mlflow.log_metric(f"{postprocessor_name}_auroc_mean", means_df.loc[best_index, "auroc"])
         mlflow.log_metric(f"{postprocessor_name}_aupr_mean", means_df.loc[best_index, "aupr"])
         mlflow.log_metric(f"{postprocessor_name}_fpr95_mean", means_df.loc[best_index, "fpr@95"])

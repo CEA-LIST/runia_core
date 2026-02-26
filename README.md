@@ -447,28 +447,27 @@ print(f"Uncertainty Scores: {scores}")
 
 ### Core Modules
 
-| Module | Description |
-|--------|-------------|
-| `runia.evaluation` | MC sampling, entropy computation, OoD evaluation metrics |
-| `runia.inference` | Production-ready inference with LaRED/LaREM postprocessors |
-| `runia.baselines` | 15+ baseline OoD detection methods (MSP, Energy, Mahalanobis, kNN, ViM, DDU, DICE, ReAct, etc.) |
-| `runia.feature_extraction` | Image-level and object-level feature extraction |
-| `runia.llm_uncertainty` | LLM uncertainty and hallucination detection methods |
-| `runia.dimensionality_reduction` | PCA and other dimensionality reduction utilities |
+| Module | Description                                                                    |
+|--------|--------------------------------------------------------------------------------|
+| `runia.evaluation` | MC sampling, entropy computation, baselines, OOD evaluation metrics            |
+| `runia.inference` | Production-ready inference with LaRED/LaREM postprocessors and other baselines |
+| `runia.feature_extraction` | Image-level and object-level feature extraction                                |
+| `runia.llm_uncertainty` | LLM uncertainty and hallucination detection methods                            |
+| `runia.dimensionality_reduction` | PCA and other dimensionality reduction utilities                               |
 
 ### Key Classes and Functions
 
 **Evaluation:**
 - `Hook`: Capture layer outputs during forward pass
-- `get_latent_representation_mcd_samples()`: Extract MC dropout samples
-- `get_dl_h_z()`: Compute entropy from MC samples
-- `log_evaluate_lared_larem()`: Evaluate LaRED/LaREM with metrics
+- `BoxFeaturesExtractor`: Extract latent samples and features for object detection architectures
+- `FastMCDSamplesExtractor`: Efficiently extract latent samples for image classification architectures
+- `log_evaluate_larex()`: Evaluate LaREx and baselines with metrics
 
 **Inference:**
-- `LaRExInference`: Main inference module for OoD detection
-- `LaREMPostprocessor`: Mahalanobis distance-based detector (recommended)
-- `LaREDPostprocessor`: KDE-based detector
-- `MCSamplerModule`: Monte Carlo sampling module
+- `postprocessors_dict`: Dictionary of available postprocessors for inference
+- `ObjectLevelInference`: Inference module for object detection architectures
+- `LaRExInference`: Main inference module for OoD detection using latent space methods
+- `LaREMPostprocessor`: Mahalanobis distance-based detector (recommended) for latent space postprocessing
 
 **LLM Uncertainty:**
 - `compute_uncertainties()`: Compute multiple uncertainty scores for LLM outputs
