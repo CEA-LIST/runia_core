@@ -50,7 +50,7 @@
 ### Prerequisites
 
 - Python 3.9 or higher
-- CUDA-capable GPU (recommended for computer vision tasks)
+- CUDA-capable GPU (recommended for computer vision tasks and LLMs)
 
 ### Using pip
 
@@ -131,7 +131,7 @@ inference_module = LaRExInference(
 prediction, confidence_score = inference_module.get_score(test_image, layer_hook=hooked_layer)
 ```
 
-### LLM Uncertainty Estimation (White-box methods)
+### LLM Uncertainty Estimation (White-box methods) for Hallucination Detection
 
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
@@ -483,18 +483,9 @@ print(f"Uncertainty Scores: {scores}")
 
 ---
 
-## References
-
-### Publications
-
-- [Latent representation entropy density for distribution shift detection](https://hal.science/hal-04674980v1/file/417_latent_representation_entropy_.pdf)
-
-
----
-
 ## Contributing
 
-Contributions are welcome! Please feel free to submit issues or pull requests.
+Contributions are welcome! Please feel free to submit issues or pull requests by following the [Contribution Guidelines](CONTRIBUTING.md).
 
 ## License
 
@@ -507,6 +498,12 @@ See [LICENSE.txt](LICENSE.txt) for details.
 
 ---
 
-## Acknowledgments
+## References
 
-This work was developed as part of the Confiance.ai program, focusing on trustworthy AI systems with emphasis on uncertainty estimation and out-of-distribution detection.
+### Publications
+
+- [Latent representation entropy density for distribution shift detection](https://hal.science/hal-04674980v1/file/417_latent_representation_entropy_.pdf)
+
+
+- [The Map of Misbelief: Tracing Intrinsic and Extrinsic Hallucinations Through Attention Patterns](https://ojs.aaai.org/index.php/AAAI-SS/article/view/36884)
+---
