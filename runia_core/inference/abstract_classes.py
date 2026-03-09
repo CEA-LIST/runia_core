@@ -43,13 +43,13 @@ def record_time(function):
         Function return and execution time
     """
 
-    def wrap(*args, **kwargs):
+    def wrapper(*args, **kwargs):
         start_time = monotonic()
         function_return = function(*args, **kwargs)
         delta_t = monotonic() - start_time
         return function_return, delta_t
 
-    return wrap
+    return wrapper
 
 
 ###########################################################################

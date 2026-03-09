@@ -223,7 +223,7 @@ def get_ls_mcd_samples_rcnn(
                             # Remove useless dimensions:
                             latent_mcd_sample[i] = torch.squeeze(latent_mcd_sample[i])
                         latent_mcd_sample = torch.cat(latent_mcd_sample, dim=0)
-                    elif layer_type == "backbone":
+                    elif layer_type == "backbone":  # pragma: no cover
                         # Apply dropblock
                         for k, v in latent_mcd_sample.items():
                             latent_mcd_sample[k] = dropblock_ext(v)
@@ -332,7 +332,7 @@ class MCSamplerRCNN(torch.nn.Module):
         return samples_t
 
 
-class LaRexInferenceRCNN(LaRExInference):
+class LaRexInferenceRCNN(LaRExInference):  # pragma: no cover
     """
     Module to perform inference on a trained RCNN model with LaREx. The RCNN must have the
     compatible architectural modifications; namely: need to catch the intermediate representations
@@ -369,9 +369,9 @@ class LaRexInferenceRCNN(LaRExInference):
                 input_image = input_image.to(self.device)
             except AttributeError:
                 pass
-            output = self.dnn_model(input_image)
+            output = self.model(input_image)
 
-        mc_samples_t = self.mc_sampler(self.dnn_model)
+        mc_samples_t = self.mc_sampler(self.model)
         _, sample_h_z = get_dl_h_z(mc_samples_t, self.mcd_samples_nro)
         if self.pca_transform:
             sample_h_z = apply_pca_transform(sample_h_z, self.pca_transform)
@@ -396,9 +396,9 @@ class LaRexInferenceRCNN(LaRExInference):
                 input_image = input_image.to(self.device)
             except AttributeError:
                 pass
-            _ = self.dnn_model(input_image)
+            _ = self.model(input_image)
 
-        mc_samples_t = self.mc_sampler(self.dnn_model)
+        mc_samples_t = self.mc_sampler(self.model)
         return mc_samples_t
 
     @record_time
@@ -418,11 +418,11 @@ class LaRexInferenceRCNN(LaRExInference):
         with torch.no_grad():
             mc_samples_t = []
             for i in range(self.mcd_samples_nro):
-                output = self.dnn_model(input_image)
+                output = self.model(input_image)
                 if self.layer_type == "RPN":
                     # Take latent sample
                     latent_mcd_sample = (
-                        self.dnn_model.model.proposal_generator.rpn_head.rpn_intermediate_output
+                        self.model.model.proposal_generator.rpn_head.rpn_intermediate_output
                     )
                     for i in range(len(latent_mcd_sample)):
                         latent_mcd_sample[i] = self.mc_sampler.drop_blocks[0](latent_mcd_sample[i])
@@ -447,7 +447,7 @@ class LaRDInferenceRCNN(LaRDInference):
     of latent feature statistics for distribution shift detection
 
     Args:
-            dnn_model: RCNN trained model
+            model: RCNN trained model
             detector: KDE or Mahalanobis module
             pca_transform: PCA trained tranformation function
             layer_type: Either "Conv", "RPN" or "FC"
@@ -455,7 +455,7 @@ class LaRDInferenceRCNN(LaRDInference):
 
     def __init__(
         self,
-        dnn_model: torch.nn.Module,
+        model: torch.nn.Module,
         detector,
         pca_transform=None,
         layer_type="Conv",
@@ -465,12 +465,12 @@ class LaRDInferenceRCNN(LaRDInference):
         of latent feature statistics for distribution shift detection
 
         Args:
-            dnn_model: RCNN trained model
+            model: RCNN trained model
             detector: KDE or Mahalanobis module
             pca_transform: PCA trained tranformation function
             layer_type: Either "Conv", "RPN" or "FC"
         """
-        super().__init__(dnn_model, detector, pca_transform, layer_type)
+        super().__init__(model, detector, pca_transform, layer_type)
         if layer_type == "RPN":
             self.reducer = self.process_rpn_intermediate_representation
 
@@ -499,7 +499,7 @@ class LaRDInferenceRCNN(LaRDInference):
         Returns:
             Reduced version of the latent representation in the RPN
         """
-        latent_mcd_sample = self.dnn_model.model.proposal_generator.rpn_head.rpn_intermediate_output
+        latent_mcd_sample = self.model.model.proposal_generator.rpn_head.rpn_intermediate_output
         for i in range(len(latent_mcd_sample)):
             latent_mcd_sample[i] = torch.mean(latent_mcd_sample[i], dim=2, keepdim=True)
             latent_mcd_sample[i] = torch.mean(latent_mcd_sample[i], dim=3, keepdim=True)
