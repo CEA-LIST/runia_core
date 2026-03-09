@@ -475,7 +475,7 @@ def subset_boxes(
     Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]],
 ]:
     """
-    Function that subsets a given number of box predictions into a smaller number of them, to speed up caluclations
+    Function that subsets a given number of box predictions into a smaller number of them, to speed up calculations
     during evaluation.
 
     Args:
