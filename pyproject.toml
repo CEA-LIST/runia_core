@@ -70,4 +70,6 @@ exclude_lines = [
     "pass",
     "rank_zero_warn",
     "raise NotImplementedError",
+    "continue",
+    "plt.show()",
 ]

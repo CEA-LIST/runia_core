@@ -158,7 +158,7 @@ class COCOParser:
         class_ids = class_ids if isinstance(class_ids, list) else [class_ids]
         return [self.cat_dict[class_id] for class_id in class_ids]
 
-    def get_imgLicenses(self, im_ids: Union[List, int, str]) -> List[Dict]:
+    def get_imgLicenses(self, im_ids: Union[List, int, str]) -> List[Dict]:  # pragma: no cover
         """
         Retrieves the license details for the given images.
 

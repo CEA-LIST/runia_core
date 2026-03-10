@@ -24,7 +24,6 @@ from runia_core.evaluation.entropy import get_dl_h_z
 
 __all__ = [
     "BoxFeaturesExtractor",
-    "BoxFeaturesExtractorAnomalyLoader",
 ]
 
 
@@ -250,43 +249,6 @@ class BoxFeaturesExtractor(ObjectDetectionExtractor):
         if self.return_raw_predictions:
             results["raw_preds"] = pred_img
         return results, found_objs_flag
-
-
-class BoxFeaturesExtractorAnomalyLoader(BoxFeaturesExtractor):
-    """
-    Used to extract latent features of a yolo model with a dataloader that generates anomalies on the fly
-    like blur, brightness, and fog.
-    """
-
-    def get_ls_samples(
-        self, data_loader: Union[DataLoader, Any], predict_conf=0.25, **kwargs
-    ) -> Dict:
-        results = {"latent_space_means": []}
-        no_obj_imgs = 0
-        if self.return_stds:
-            results["stds"] = []
-        with torch.no_grad():
-            with tqdm(total=len(data_loader), desc="Extracting latent space box samples") as pbar:
-                for image, label in data_loader:
-                    # Here, a BGR 2 RGB inversion is performed, since the torch Dataloader seems to feed yolo
-                    # Images in the wrong ordering
-                    image = [ascontiguousarray(image[0].numpy().transpose(1, 2, 0)[..., ::-1])]
-                    result_img, found_obj_flag = self._get_samples_one_image(
-                        image=image, predict_conf=predict_conf
-                    )
-                    for result_type, result_value in result_img.items():
-                        results[result_type].append(result_value)
-                    if not found_obj_flag:
-                        # impath is a list, with batch size 1 we only need the first element (the string)
-                        no_obj_imgs += 1
-                    # Update progress bar
-                    pbar.update(1)
-                for result_type, result_value in results.items():
-                    results[result_type] = torch.cat(result_value, dim=0)
-        results["no_obj"] = no_obj_imgs
-        print("Latent representation vector size: ", results["latent_space_means"].shape[1])
-        print(f"No objects in {no_obj_imgs} images")
-        return results
 
 
 def _reduce_features_to_rois(

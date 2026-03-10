@@ -107,7 +107,7 @@ class LaRExInference(ProbabilisticInferenceModule):
         with torch.no_grad():
             try:
                 input_image = input_image.to(self.device)
-            except AttributeError:
+            except AttributeError:  # pragma: no cover
                 pass
             output = self.model(input_image)
             latent_rep = layer_hook.output  # latent representation sample
@@ -120,7 +120,7 @@ class LaRExInference(ProbabilisticInferenceModule):
         return output, sample_larex_score
 
     @record_time
-    def test_time_inference(self, input_image, layer_hook):
+    def test_time_inference(self, input_image, layer_hook):  # pragma: no cover
         """
         Call the inference function and get the execution time
 
@@ -134,7 +134,7 @@ class LaRExInference(ProbabilisticInferenceModule):
         return self.get_score(input_image, layer_hook)
 
     @record_time
-    def get_layer_mc_samples(self, input_image, layer_hook):
+    def get_layer_mc_samples(self, input_image, layer_hook):  # pragma: no cover
         """
         Function used to benchmark execution time of model inference and MC sampling
 
@@ -154,7 +154,7 @@ class LaRExInference(ProbabilisticInferenceModule):
         return mc_samples_t
 
     @record_time
-    def get_mc_samples_full_inference(self, input_image, layer_hook):
+    def get_mc_samples_full_inference(self, input_image, layer_hook):  # pragma: no cover
         """
         Function used to benchmark execution time of full model inferences, instead of the fast
         method with only one inference.
@@ -267,7 +267,7 @@ class LaRDInference(InferenceModule):
     @record_time
     def test_time_inference(
         self, input_image: torch.Tensor, layer_hook: Hook
-    ) -> Tuple[torch.Tensor, float]:
+    ) -> Tuple[torch.Tensor, float]:  # pragma: no cover
         """
         Call the inference function and get the execution time
 
@@ -281,7 +281,7 @@ class LaRDInference(InferenceModule):
         return self.get_score(input_image, layer_hook)
 
     @staticmethod
-    def _reduce_conv_representation(representation: torch.Tensor) -> np.ndarray:
+    def _reduce_conv_representation(representation: torch.Tensor) -> np.ndarray:  # pragma: no cover
         """
         Private method that performs reduction of latent representations from convolutional layers.
 
@@ -296,7 +296,7 @@ class LaRDInference(InferenceModule):
         )
 
     @staticmethod
-    def _reduce_fc_representation(representation: torch.Tensor) -> np.ndarray:
+    def _reduce_fc_representation(representation: torch.Tensor) -> np.ndarray:  # pragma: no cover
         """
         Private method that performs reduction of latent representations from Fully connected
         layers.

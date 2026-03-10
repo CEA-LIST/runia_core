@@ -15,7 +15,6 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from runia_core.feature_extraction.object_level import (
     BoxFeaturesExtractor,
-    BoxFeaturesExtractorAnomalyLoader,
     _reduce_features_to_rois,
     _dropblock_rois_get_entropy,
 )
@@ -354,69 +353,6 @@ class TestBoxFeaturesExtractor(TestCase):
         )
 
         self.assertTrue(extractor.extract_noise_entropies)
-
-
-class TestBoxFeaturesExtractorAnomalyLoader(TestCase):
-    """Test suite for BoxFeaturesExtractorAnomalyLoader class"""
-
-    def setUp(self):
-        torch.manual_seed(SEED)
-        np.random.seed(SEED)
-        self.device = DEVICE
-
-        # Create a simple mock model
-        self.mock_model = Mock(spec=torch.nn.Module)
-        self.mock_model.to = Mock(return_value=self.mock_model)
-        self.mock_model.eval = Mock(return_value=self.mock_model)
-
-        # Create mock hooked layer
-        self.mock_hook = Mock(spec=Hook)
-
-    def test_anomaly_loader_initialization(self):
-        """Test BoxFeaturesExtractorAnomalyLoader initialization"""
-        extractor = BoxFeaturesExtractorAnomalyLoader(
-            model=self.mock_model,
-            hooked_layers=[self.mock_hook],
-            device=self.device,
-            architecture="yolov8",
-            roi_output_sizes=ROI_OUTPUT_SIZE,
-            roi_sampling_ratio=ROI_SAMPLING_RATIO,
-        )
-
-        # Verify it's an instance of the parent class
-        self.assertIsInstance(extractor, BoxFeaturesExtractor)
-        self.assertEqual(extractor.roi_sampling_ratio, ROI_SAMPLING_RATIO)
-
-    def test_anomaly_loader_inheritance(self):
-        """Test that BoxFeaturesExtractorAnomalyLoader inherits from BoxFeaturesExtractor"""
-        self.assertTrue(issubclass(BoxFeaturesExtractorAnomalyLoader, BoxFeaturesExtractor))
-
-    def test_anomaly_loader_with_stds(self):
-        """Test BoxFeaturesExtractorAnomalyLoader with return_stds=True"""
-        extractor = BoxFeaturesExtractorAnomalyLoader(
-            model=self.mock_model,
-            hooked_layers=[self.mock_hook],
-            device=self.device,
-            architecture="yolov8",
-            roi_output_sizes=ROI_OUTPUT_SIZE,
-            return_stds=True,
-            roi_sampling_ratio=ROI_SAMPLING_RATIO,
-        )
-
-        self.assertTrue(extractor.return_stds)
-
-    def test_anomaly_loader_with_different_architecture(self):
-        """Test BoxFeaturesExtractorAnomalyLoader with different architectures"""
-        for arch in ["rcnn", "detr-backbone", "owlv2"]:
-            extractor = BoxFeaturesExtractorAnomalyLoader(
-                model=self.mock_model,
-                hooked_layers=[self.mock_hook],
-                device=self.device,
-                architecture=arch,
-                roi_output_sizes=ROI_OUTPUT_SIZE,
-                roi_sampling_ratio=ROI_SAMPLING_RATIO,
-            )
-            self.assertEqual(extractor.architecture, arch)
 
 
 class TestEdgeCasesAndErrors(TestCase):
@@ -1028,33 +964,6 @@ class TestIntegrationScenarios(TestCase):
         # Since input is all ones, mean should be close to 1 and std should be close to 0
         self.assertTrue(torch.allclose(means[0], torch.ones_like(means[0]), atol=0.1))
         self.assertTrue(torch.allclose(stds[0], torch.zeros_like(stds[0]), atol=0.1))
-
-    def test_anomaly_loader_multiple_configurations(self):
-        """Test BoxFeaturesExtractorAnomalyLoader with various configurations"""
-        mock_model = Mock(spec=torch.nn.Module)
-        mock_model.to = Mock(return_value=mock_model)
-        mock_model.eval = Mock(return_value=mock_model)
-        mock_hook = Mock(spec=Hook)
-
-        configurations = [
-            {"return_raw_predictions": True, "return_stds": True},
-            {"return_raw_predictions": False, "return_stds": False},
-            {"return_raw_predictions": True, "return_stds": False},
-        ]
-
-        for config in configurations:
-            extractor = BoxFeaturesExtractorAnomalyLoader(
-                model=mock_model,
-                hooked_layers=[mock_hook],
-                device=self.device,
-                architecture="yolov8",
-                roi_output_sizes=ROI_OUTPUT_SIZE,
-                roi_sampling_ratio=ROI_SAMPLING_RATIO,
-                **config,
-            )
-
-            self.assertEqual(extractor.return_raw_predictions, config["return_raw_predictions"])
-            self.assertEqual(extractor.return_stds, config["return_stds"])
 
     def test_mixed_object_detection_scenario(self):
         """Test realistic mixed scenario with detected and undetected objects"""

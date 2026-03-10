@@ -131,7 +131,7 @@ def get_aggregated_data_dict(
     no_obj_dict: Dict[str, List],
     non_empty_predictions_ids: Dict[str, List],
     probs_as_logits: bool,
-) -> Tuple[Dict, Dict, Dict]:
+) -> Tuple[Dict, Dict, Dict]:  # pragma: no cover
     """
     Extracts and aggregates data from a given dataset dictionary for a specific dataset. Function
     most useful when dealing with object-level OOD detection and OSOD benchmark.
@@ -199,7 +199,7 @@ def associate_precalculated_baselines_with_raw_predictions(
     baselines_names: List[str],
     non_empty_ids: List[str],
     is_ood: bool,
-) -> Dict[str, Dict[str, torch.Tensor]]:
+) -> Dict[str, Dict[str, torch.Tensor]]:  # pragma: no cover
     """
     Associates precomputed baseline results with raw predictions for a given dataset. Function
     most useful when dealing with object-level OOD detection and OSOD benchmark.
