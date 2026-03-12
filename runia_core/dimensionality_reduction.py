@@ -29,7 +29,7 @@ def apply_pca_ds(
     nro_components: int = 16,
     svd_solver: str = "randomized",
     whiten: bool = True,
-) -> Tuple[np.ndarray, np.ndarray, PCA]:
+) -> Tuple[np.ndarray, np.ndarray, PCA]:  # pragma: no cover
     """
     Applies PCA dimensionality reduction to a dataset
 

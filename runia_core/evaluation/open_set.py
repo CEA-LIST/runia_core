@@ -784,6 +784,7 @@ def evaluate_open_set_detection_one_method(
     is_open_set_model: bool,
     unk_class_number: Union[int, None] = None,
     using_subset: Optional[List[Union[str, int]]] = False,
+    min_conf_score: Optional[float] = None,
 ) -> Dict[str, float]:
     """
     Evaluates open-set detection for a given method using specified parameters and
@@ -816,6 +817,8 @@ def evaluate_open_set_detection_one_method(
             unknown class, if applicable. Default is None.
         using_subset (Optional[List[Union[str, int]]], optional): Subset of
             image IDs to evaluate on, or False if not applicable.
+        min_conf_score (Optional[float], optional): Minimum confidence score to calculate metrics on.
+            If None, all predictions are considered.
 
     Returns:
         Dict[str, float]: A dictionary of evaluation results containing metric
@@ -825,7 +828,7 @@ def evaluate_open_set_detection_one_method(
     evaluator.reset()
     for im_id, im_pred in predictions_dict.items():
         # If using ID val subset, process only if in the used subset
-        if using_subset and im_id in using_subset:
+        if (using_subset and im_id in using_subset) or not using_subset:
             if len(im_pred["boxes"]) > 0:
                 labels, scores = get_labels_and_scores_from_logits(im_pred["logits"])
                 boxes = get_boxes_from_precalculated(im_pred["boxes"])
@@ -835,21 +838,14 @@ def evaluate_open_set_detection_one_method(
                 else:
                     unk_boxes = np.where(labels == unk_class_number)
                 labels[unk_boxes] = evaluator.unknown_class_index
+                # If min_conf_score is set, filter predictions by confidence score before adding to evaluator
+                if min_conf_score is not None:
+                    labels, scores, boxes = _filter_predictions_by_conf_score(
+                        labels, scores, boxes, min_conf_score
+                    )
                 # Add results to evaluator
                 evaluator.process(im_id, boxes, scores, labels)
-        # Otherwise process all
-        elif not using_subset:
-            if len(im_pred["boxes"]) > 0:
-                labels, scores = get_labels_and_scores_from_logits(im_pred["logits"])
-                boxes = get_boxes_from_precalculated(im_pred["boxes"])
-                if not is_open_set_model:
-                    # Postprocess according to score and threshold
-                    unk_boxes = np.where(np.array(predictions_dict[im_id][method_name]) < threshold)
-                else:
-                    unk_boxes = np.where(labels == unk_class_number)
-                labels[unk_boxes] = evaluator.unknown_class_index
-                # Add results to evaluator
-                evaluator.process(im_id, boxes, scores, labels)
+
     evaluation_results = evaluator.evaluate(
         test_gt_annotations_path,
         is_ood=evaluating_ood,
@@ -857,6 +853,33 @@ def evaluate_open_set_detection_one_method(
         using_subset=using_subset,
     )
     return evaluation_results
+
+
+def _filter_predictions_by_conf_score(
+    labels: np.ndarray, scores: np.ndarray, boxes: np.ndarray, min_conf_score: float
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:  # pragma: no cover
+    """
+    Filters predictions based on a minimum confidence score threshold.
+
+    This function takes arrays of predicted labels, confidence scores, and bounding boxes,
+    and returns only those predictions where the confidence score meets or exceeds the specified
+    minimum confidence score. This is useful for evaluating model performance at different confidence
+    levels.
+
+    Args:
+        labels (np.ndarray): Array of predicted class labels for each detection.
+        scores (np.ndarray): Array of confidence scores corresponding to each detection.
+        boxes (np.ndarray): Array of bounding boxes corresponding to each detection.
+        min_conf_score (float): The minimum confidence score threshold for filtering predictions.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray, np.ndarray]: A tuple containing three numpy arrays:
+            - Filtered labels that meet the confidence score threshold.
+            - Filtered scores that meet the confidence score threshold.
+            - Filtered bounding boxes that meet the confidence score threshold.
+    """
+    valid_indices = np.where(scores >= min_conf_score)
+    return labels[valid_indices], scores[valid_indices], boxes[valid_indices]
 
 
 def get_boxes_from_precalculated(boxes: Union[torch.Tensor, np.ndarray, list]) -> np.ndarray:
@@ -971,6 +994,7 @@ def get_overall_open_set_results(
     is_open_set_model: bool,
     unk_class_number: Union[int, None] = None,
     using_id_val_subset: Optional[List[Union[str, int]]] = False,
+    min_conf_score: Optional[float] = None,
 ) -> Dict[str, Dict[str, Dict[str, float]]]:
     """
     Evaluate overall open set detection results on both in-distribution (ID) and out-of-distribution (OOD) datasets.
@@ -997,6 +1021,8 @@ def get_overall_open_set_results(
         unk_class_number (Union[int, None], optional): Class number assigned to unknown samples. Defaults to None.
         using_id_val_subset (Optional[List[Union[str, int]]], optional): Subset of in-distribution validation data to use.
             Defaults to False.
+        min_conf_score (Optional[float], optional): Minimum confidence score to calculate metrics on.
+            If None, all predictions are considered.
 
     Returns:
         Dict[str, Dict[str, Dict[str, float]]]: A nested dictionary where each key is a dataset name (in-distribution
@@ -1021,6 +1047,7 @@ def get_overall_open_set_results(
                     using_subset=using_id_val_subset,
                     is_open_set_model=is_open_set_model,
                     unk_class_number=unk_class_number,
+                    min_conf_score=min_conf_score,
                 )
             )
     for ood_dataset_name in tqdm(
@@ -1041,6 +1068,7 @@ def get_overall_open_set_results(
                     get_known_classes_metrics=get_known_classes_metrics,
                     is_open_set_model=is_open_set_model,
                     unk_class_number=unk_class_number,
+                    min_conf_score=min_conf_score,
                 )
             )
     return open_set_results

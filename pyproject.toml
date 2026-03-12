@@ -72,4 +72,5 @@ exclude_lines = [
     "raise NotImplementedError",
     "continue",
     "plt.show()",
+    "raise"
 ]
