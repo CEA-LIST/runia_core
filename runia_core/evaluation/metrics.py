@@ -19,6 +19,7 @@ import torchmetrics.functional as tmf
 import seaborn as sns
 from collections import defaultdict
 
+from runia_core.evaluation.open_set import get_boxes_gtu_and_uu_ood_dataset
 from runia_core.inference.postprocessors import postprocessors_dict
 
 __all__ = [
@@ -572,3 +573,85 @@ def subset_boxes(
     if non_empty_predictions_id is not None and non_empty_predictions_ood is not None:
         return ind_dict, ood_dict, non_empty_predictions_id, non_empty_predictions_ood
     return ind_dict, ood_dict
+
+
+def get_gtu_uu_metrics(
+    ind_dataset_name: str,
+    ind_gt_annotations_path: str,
+    ind_data_dict: Dict,
+    ood_data_dict: Dict,
+    ood_datasets_names: List[str],
+    ood_annotations_paths: Dict[str, str],
+    methods_names: List[str],
+    metric_2007: bool,
+    min_conf_score: Optional[float] = None,
+) -> Dict[str, Dict[str, Dict[str, np.ndarray]]]:
+    """
+    Get labels, boxes, softmax scores and method scores for GTU (Ground Truth Unknown) and UU (Unknown Unknown)
+    detections for one class.
+
+    Args:
+        ind_dataset_name: String with the name of the InD dataset
+        ind_gt_annotations_path: String with the path to the InD GT annotations
+        ind_data_dict: Dictionary with the InD predictions, in the format
+            {"valid": {image_id: {"method_name": list of predictions}}}
+        ood_data_dict: Dictionary with the OoD predictions, in the format
+            {ood_dataset_name: {image_id: {"method_name": list of predictions}}}
+        ood_datasets_names: List of strings with the names of the OoD datasets
+        ood_annotations_paths: Dictionary with keys as OoD dataset names and values as strings with the paths
+            to their GT annotations
+        methods_names: List of strings with the names of the methods to evaluate
+        metric_2007: Boolean flag to indicate whether to use metric 2007 or not for evaluation
+        min_conf_score: Optional float with a minimum confidence score threshold for a box to be
+            considered in evaluation. If None, no threshold is applied
+
+    Returns:
+        Dict: Dictionary with keys as OoD dataset names and values as dictionaries with keys as method names and
+            values as dictionaries with keys 'gtu' and 'uu' and values as the corresponding scores
+    """
+    # Get ID scores per method
+    id_valid_scores = {}
+    for method in methods_names:
+        id_valid_scores[method] = []
+        for im_id, pred_dict in ind_data_dict["valid"].items():
+            id_valid_scores[method].extend(pred_dict[method])
+
+        id_valid_scores[method] = np.array([id_valid_scores[method]]).squeeze()
+
+    ood_scores = {}
+    results = {}
+    for ood_dataset_name in ood_datasets_names:
+        ood_scores[ood_dataset_name] = {}
+        results[ood_dataset_name] = {}
+        for method in methods_names:
+            ood_scores[ood_dataset_name][method] = {}
+            results[ood_dataset_name][method] = {}
+            (
+                ood_scores[ood_dataset_name][method]["gtu"],
+                ood_scores[ood_dataset_name][method]["uu"],
+            ) = get_boxes_gtu_and_uu_ood_dataset(
+                id_dataset_name=ind_dataset_name,
+                id_gt_annotations_path=ind_gt_annotations_path,
+                predictions_dict=ood_data_dict[ood_dataset_name],
+                method_name=method,
+                test_gt_annotations_path=ood_annotations_paths[ood_dataset_name],
+                metric_2007=metric_2007,
+                evaluating_ood=True,
+                min_conf_score=min_conf_score,
+            )
+            _, results_gtu = get_auroc_results(
+                detect_exp_name="",
+                ind_samples_scores=id_valid_scores[method],
+                ood_samples_scores=ood_scores[ood_dataset_name][method]["gtu"],
+                return_results_for_mlflow=True,
+            )
+            _, results_uu = get_auroc_results(
+                detect_exp_name="",
+                ind_samples_scores=id_valid_scores[method],
+                ood_samples_scores=ood_scores[ood_dataset_name][method]["uu"],
+                return_results_for_mlflow=True,
+            )
+            results[ood_dataset_name][method]["gtu"] = results_gtu
+            results[ood_dataset_name][method]["uu"] = results_uu
+
+    return results

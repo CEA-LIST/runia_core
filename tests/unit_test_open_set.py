@@ -238,9 +238,16 @@ class TestOpenSetEvaluator(TestCase):
         )
         boxes = np.array([[10, 10, 50, 50], [100, 100, 160, 160]])
         scores = np.array([0.95, 0.85])
+        method_scores = np.array([0.95, 0.85])
         classes = np.array([0, 1])
 
-        evaluator.process(image_id=1, boxes=boxes, scores=scores, classes=classes)
+        evaluator.process(
+            image_id=1,
+            boxes=boxes,
+            softmax_scores=scores,
+            classes=classes,
+            method_scores=method_scores,
+        )
         self.assertEqual(len(evaluator._predictions[0]), 1)
         self.assertEqual(len(evaluator._predictions[1]), 1)
 
@@ -265,8 +272,15 @@ class TestOpenSetEvaluator(TestCase):
         # Add some predictions
         boxes = np.array([[10, 10, 50, 50], [100, 100, 160, 160]])
         scores = np.array([0.95, 0.85])
+        method_scores = np.array([0.95, 0.85])
         classes = np.array([0, 1])
-        evaluator.process(image_id=1, boxes=boxes, scores=scores, classes=classes)
+        evaluator.process(
+            image_id=1,
+            boxes=boxes,
+            softmax_scores=scores,
+            classes=classes,
+            method_scores=method_scores,
+        )
 
         # Evaluate on the same annotations
         results = evaluator.evaluate(
@@ -570,7 +584,7 @@ class TestVocEval(TestCase):
     def test_voc_eval_known_class(self):
         """Test VOC evaluation for known class."""
         annotations = COCOParser(self.coco_path)
-        predictions = ["1 0.95 11 11 61 61", "1 0.90 101 101 161 161"]
+        predictions = ["1 0.95 11 11 61 61 0.95", "1 0.90 101 101 161 161 0.90"]
 
         rec, prec, ap, unk_sum, n_unk, tp_fp_cs, fp_os = voc_eval(
             predictions, annotations, "cat", ovthresh=0.5, use_07_metric=True, is_ood=False

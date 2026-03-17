@@ -19,6 +19,7 @@ __all__ = [
     "convert_osod_results_for_mlflow_logging",
     "plot_two_osod_datasets_metrics",
     "plot_two_osod_datasets_per_metric",
+    "get_boxes_gtu_and_uu_ood_dataset",
 ]
 
 
@@ -82,18 +83,12 @@ class COCOParser:
             self.cat_dict[cat["id"]] = cat
             self.cat_dict[cat["id"]]["count"] = 0
         for ann in coco["annotations"]:
-            if using_subset and ann["image_id"] in using_subset:
-                self.annIm_dict[ann["image_id"]].append(ann)
-                self.annId_dict[ann["id"]] = ann
-                self.cat_dict[ann["category_id"]]["count"] += 1
-            elif not using_subset:
+            if (using_subset and ann["image_id"] in using_subset) or not using_subset:
                 self.annIm_dict[ann["image_id"]].append(ann)
                 self.annId_dict[ann["id"]] = ann
                 self.cat_dict[ann["category_id"]]["count"] += 1
         for img in coco["images"]:
-            if using_subset and img["id"] in using_subset:
-                self.im_dict[img["id"]] = img
-            elif not using_subset:
+            if (using_subset and img["id"] in using_subset) or not using_subset:
                 self.im_dict[img["id"]] = img
 
         # Licenses not actually needed per image
@@ -275,7 +270,12 @@ class OpenSetEvaluator:
         self._predictions = defaultdict(list)
 
     def process(
-        self, image_id: Union[str, int], boxes: np.ndarray, scores: np.ndarray, classes: np.ndarray
+        self,
+        image_id: Union[str, int],
+        boxes: np.ndarray,
+        softmax_scores: np.ndarray,
+        method_scores: np.ndarray,
+        classes: np.ndarray,
     ) -> None:
         """
         Processes the detection outputs by converting bounding box values, appending formatted
@@ -285,19 +285,21 @@ class OpenSetEvaluator:
             image_id (Union[str, int]): The unique identifier for the image.
             boxes (np.ndarray): Array of bounding boxes for detected objects. Each box is defined by
                 [xmin, ymin, xmax, ymax].
-            scores (np.ndarray): Array of confidence scores for the detected objects.
+            softmax_scores (np.ndarray): Array of confidence scores for the detected objects.
+            method_scores (np.ndarray): Array of method-specific scores for the detected objects,
+                which may be used for additional evaluation or analysis.
             classes (np.ndarray): Array of class labels for the detected objects.
 
         Returns:
             None
         """
-        for box, score, cls in zip(boxes, scores, classes):
+        for box, s_score, cls, m_score in zip(boxes, softmax_scores, classes, method_scores):
             xmin, ymin, xmax, ymax = box
             # The inverse of data loading logic in `datasets/pascal_voc.py`
             xmin += 1
             ymin += 1
             self._predictions[cls].append(
-                f"{image_id} {score:.3f} {xmin:.1f} {ymin:.1f} {xmax:.1f} {ymax:.1f}"
+                f"{image_id} {s_score:.3f} {xmin:.1f} {ymin:.1f} {xmax:.1f} {ymax:.1f} {m_score:.3f}"
             )
 
     def evaluate(
@@ -430,6 +432,54 @@ class OpenSetEvaluator:
 
         return {metric: round(x, 3) for metric, x in zip(results_head, results_data[0])}
 
+    def get_boxes_gtu_uu(
+        self,
+        test_annotations_path: str,
+        is_ood: bool,
+        using_subset: Optional[List[Union[str, int]]] = False,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Get OOD detection scores for GTU (Ground Truth Unknown) and UU (Unknown Unknown) detections.
+
+        Args:
+            test_annotations_path (str): Path to the file containing test annotations
+                in COCO format.
+            is_ood (bool): Indicates whether all objects in the evaluated dataset are out-of-distribution (OOD).
+            using_subset (Optional[List[Union[str, int]]], optional): A subset of image ids
+                from the annotations to use during evaluation. Defaults to False.
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: A tuple with the given method scores of the GTU and the UU of the dataset.
+        """
+        test_annotations = COCOParser(test_annotations_path, using_subset)
+        # Get the predictions per class
+        predictions = defaultdict(list)
+        for clsid, lines in self._predictions.items():
+            predictions[clsid].extend(lines)
+
+        gtus = defaultdict(list)
+        uus = defaultdict(list)
+
+        for cls_id, cls_name in enumerate(self._class_names):
+            lines = predictions.get(cls_id, [""])
+
+            for thresh in [
+                50,
+            ]:
+                # for thresh in range(50, 100, 5):
+                (gtu, uu) = get_gtu_uu_per_class(
+                    lines,
+                    test_annotations,
+                    cls_name,
+                    ovthresh=thresh / 100.0,
+                    use_07_metric=self._is_2007,
+                    is_ood=is_ood,
+                )
+                gtus[thresh].extend(gtu["method_scores"])
+                uus[thresh].extend(uu["method_scores"])
+
+        return np.array(gtus[50]), np.array(uus[50])
+
     def compute_WI_at_many_recall_level(
         self, recalls: Dict[int, List], tp_plus_fp_cs: Dict[int, List], fp_os: Dict[int, List]
     ) -> Dict[float, Dict[int, float]]:
@@ -554,6 +604,127 @@ def voc_eval(
             - fp_open_set (np.ndarray or None): Cumulative false positives due to open-set misclassifications.
     """
     # extract gt objects for this class
+    class_recs, npos = _extract_gt_objects_per_class(test_annotations, classname, is_ood)
+
+    # read dets
+    image_ids, confidence, BB, method_scores = _process_detections(predictions_per_class)
+
+    # Compute precision, recall, ap for this class
+    nd, rec, prec, ap, tp, fp = _compute_precision_recall(
+        image_ids, BB, class_recs, ovthresh, npos, use_07_metric
+    )
+
+    # compute unknown det as known
+    unknown_class_recs, n_unk = _get_unk_gt(test_annotations, is_ood)
+    if classname == "unknown":
+        return rec, prec, ap, 0, n_unk, None, None
+
+    # Go down each detection and see if it has an overlap with an unknown object.
+    # If so, it is an unknown object that was classified as known.
+    is_unk_sum, fp_open_set, _ = _get_unk_det_as_known(
+        nd, image_ids, BB, unknown_class_recs, ovthresh
+    )
+    tp_plus_fp_closed_set = tp + fp
+    return rec, prec, ap, is_unk_sum, n_unk, tp_plus_fp_closed_set, fp_open_set
+
+
+def get_gtu_uu_per_class(
+    predictions_per_class: List[str],
+    test_annotations: COCOParser,
+    classname: str,
+    ovthresh: float = 0.5,
+    use_07_metric: bool = True,
+    is_ood: bool = True,
+) -> Tuple[
+    Dict[str, List[str]],
+    Dict[str, Dict[str, Union[np.ndarray, List[bool], List[bool]]]],
+]:
+    """
+    Get labels, boxes, softmax scores and method scores for GTU (Ground Truth Unknown) and UU (Unknown Unknown)
+    detections for one class.
+
+    Args:
+        predictions_per_class: List of predictions for a specific class. Each element is expected
+            to contain image ID, confidence score, and bounding box information.
+        test_annotations: Instance of COCOParser containing ground-truth annotations, including image-wise objects
+            and category details.
+        classname: Name of the class being evaluated. It can also be "unknown" for OSOD evaluation.
+        ovthresh: Minimum overlap threshold (IoU) for a correct detection. Defaults to 0.5.
+        use_07_metric: Boolean indicating whether to use PASCAL VOC 2007's 11-point AP evaluation metric (if True)
+            or comprehensive precision-recall curve integration (if False). Defaults to True.
+        is_ood (bool): Indicates whether all objects in the evaluated dataset are out-of-distribution (OOD).
+
+    Returns:
+        Tuple: A tuple with the GTU and the UU detections per class. Each is a dictionary containing:
+            - "image_ids": List of image IDs for the detections.
+            - "confidence": List of confidence scores for the detections.
+            - "bboxes": List of bounding boxes for the detections.
+            - "method_scores": List of method-specific scores for the detections.
+    """
+    # extract gt objects for this class
+    class_recs, npos = _extract_gt_objects_per_class(test_annotations, classname, is_ood)
+
+    # read dets
+    image_ids, confidence, BB, method_scores = _process_detections(predictions_per_class)
+
+    # Compute precision, recall, ap for this class
+    nd, rec, prec, _, tp, fp = _compute_precision_recall(
+        image_ids, BB, class_recs, ovthresh, npos, use_07_metric
+    )
+
+    # compute unknown det as known
+    unknown_class_recs, n_unk = _get_unk_gt(test_annotations, is_ood)
+    # if classname == "unknown":
+    #     return rec, prec, ap, 0, n_unk, None, None
+
+    # Go down each detection and see if it has an overlap with an unknown object.
+    # If so, it is an unknown object that was classified as known.
+    is_unk_sum, fp_open_set, is_unk = _get_unk_det_as_known(
+        nd, image_ids, BB, unknown_class_recs, ovthresh
+    )
+    image_ids_gtu = [image_ids[i] for i, d in enumerate(is_unk) if d == 1]
+    image_ids_uu = [image_ids[i] for i, d in enumerate(is_unk) if d == 0]
+    confidence_gtu = [confidence[i] for i, d in enumerate(is_unk) if d == 1]
+    confidence_uu = [confidence[i] for i, d in enumerate(is_unk) if d == 0]
+    bboxes_gtu = [BB[i] for i, d in enumerate(is_unk) if d == 1]
+    bboxes_uu = [BB[i] for i, d in enumerate(is_unk) if d == 0]
+    method_scores_gtu = [method_scores[i] for i, d in enumerate(is_unk) if d == 1]
+    method_scores_uu = [method_scores[i] for i, d in enumerate(is_unk) if d == 0]
+    gtu = {
+        "image_ids": image_ids_gtu,
+        "confidence": confidence_gtu,
+        "bboxes": bboxes_gtu,
+        "method_scores": method_scores_gtu,
+    }
+    uu = {
+        "image_ids": image_ids_uu,
+        "confidence": confidence_uu,
+        "bboxes": bboxes_uu,
+        "method_scores": method_scores_uu,
+    }
+    return gtu, uu
+
+
+def _extract_gt_objects_per_class(
+    test_annotations: COCOParser, classname: str, is_ood: bool
+) -> Tuple[Dict[str, Dict[str, Union[np.ndarray, List[bool], List[bool]]]], int]:
+    """
+    Gets the ground truth objects for a specific class from the annotations.
+
+    Args:
+        test_annotations: Instance of COCOParser containing ground-truth annotations, including image-wise objects
+            and category details.
+        classname: Name of the class being evaluated. It can also be "unknown" for OSOD evaluation.
+        is_ood (bool): Indicates whether all objects in the evaluated dataset are out-of-distribution (OOD).
+
+    Returns:
+        Tuple: A tuple with the class ground truth records and the number of positive instances.
+            The class ground truth records is a dictionary where keys are image ids and values are
+            dictionaries containing:
+            - "bbox": An array of bounding boxes for the objects of the specified class in the image.
+            - "difficult": A boolean array indicating whether each object is marked as difficult.
+            - "det": A list of booleans initialized to False, indicating whether each object has been detected or not.
+    """
     class_recs = {}
     npos = 0
     # if not is_ood:
@@ -578,21 +749,75 @@ def voc_eval(
             imagename = str(imagename)
         class_recs[imagename] = {"bbox": bbox, "difficult": difficult, "det": det}
 
-    # read dets
+    return class_recs, npos
+
+
+def _process_detections(
+    predictions_per_class: List[str],
+) -> Tuple[List[str], np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Returns detections for a specific class in the format of image ids, confidence scores, bounding boxes and
+    method scores.
+
+    Args:
+        predictions_per_class: List of predictions for a specific class. Each element is expected
+            to contain image ID, confidence score, bounding box information, and a OOD method score.
+
+    Returns:
+        Tuple: A tuple with the image ids, confidence scores, bounding boxes and method scores for the detections
+            of a specific class.
+    """
     splitlines = [x.strip().split(" ") for x in predictions_per_class]
     image_ids = [x[0] for x in splitlines]
     # If there exists detections for this class
     if len(image_ids[0]) > 0:
         confidence = np.array([float(x[1]) for x in splitlines])
-        BB = np.array([[float(z) for z in x[2:]] for x in splitlines]).reshape(-1, 4)
+        BB = np.array([[float(z) for z in x[2:6]] for x in splitlines]).reshape(-1, 4)
+        method_scores = np.array([float(x[6]) for x in splitlines])
 
         # sort by confidence
         sorted_ind = np.argsort(-confidence)
         BB = BB[sorted_ind, :]
         image_ids = [image_ids[x] for x in sorted_ind]
+        method_scores = method_scores[sorted_ind]
+        confidence = confidence[sorted_ind]
     else:
         image_ids = []
+        confidence = []
+        BB = []
+        method_scores = []
 
+    return image_ids, confidence, BB, method_scores
+
+
+def _compute_precision_recall(
+    image_ids: List[str],
+    BB: np.ndarray,
+    class_recs: Dict[str, Dict[str, Union[np.ndarray, List[bool], List[bool]]]],
+    ovthresh: float,
+    npos: int,
+    use_07_metric: bool,
+) -> Tuple[int, np.ndarray, np.ndarray, float, np.ndarray, np.ndarray]:
+    """
+    Computes precision, recall and average precision for a specific class.
+
+    Args:
+        image_ids: List of image ids.
+        BB: Array of bounding boxes for the detections.
+        class_recs: Dictionary of ground-truth annotations for the class, where keys are image ids and values
+            are dictionaries containing:
+            - "bbox": An array of bounding boxes for the objects of the specified class in the image.
+            - "difficult": A boolean array indicating whether each object is marked as difficult.
+            - "det": A list of booleans initialized to False, indicating whether each object has been detected or not.
+        ovthresh: Minimum overlap threshold (IoU) for a correct detection.
+        npos: Number of positive instances for the class in the ground-truth data.
+        use_07_metric: Boolean indicating whether to use PASCAL VOC 2007's 11-point AP evaluation metric
+            (if True) or comprehensive precision-recall curve integration (if False
+
+    Returns:
+        Tuple: A tuple with the number of detections, recall array, precision array, average precision,
+            true positives array and false positives array for the class.
+    """
     # go down dets and mark TPs and FPs
     nd = len(image_ids)
     tp = np.zeros(nd)
@@ -628,12 +853,36 @@ def voc_eval(
         rec = tp / float(npos)
     elif npos == 0:
         rec = tp
+    else:
+        raise ValueError
     # avoid divide by zero in case the first detection matches a difficult
     # ground truth
     prec = tp / np.maximum(tp + fp, np.finfo(np.float64).eps)
     ap = voc_ap(rec, prec, use_07_metric)
 
-    # compute unknown det as known
+    return nd, rec, prec, ap, tp, fp
+
+
+def _get_unk_gt(
+    test_annotations: COCOParser, is_ood: bool
+) -> Tuple[Dict[str, Dict[str, Union[np.ndarray, List[bool], List[bool]]]], int]:
+    """
+    Gets the ground truth objects for the unknown class from the annotations.
+
+    Args:
+        test_annotations: Instance of COCOParser containing ground-truth annotations, including image-wise objects
+            and category details.
+        is_ood (bool): Indicates whether all objects in the evaluated dataset are out-of-distribution (OOD).
+
+    Returns:
+        Tuple: A tuple with the unknown class ground truth records and the number of unknown objects in the
+            ground-truth data.
+            The unknown class ground truth records is a dictionary where keys are image ids and values are
+            dictionaries containing:
+            - "bbox": An array of bounding boxes for the objects of the unknown class in the image.
+            - "difficult": A boolean array indicating whether each object is marked as difficult.
+            - "det": A list of booleans initialized to False, indicating whether each object has been detected or not.
+    """
     unknown_class_recs = {}
     n_unk = 0
     for imagename in test_annotations.annIm_dict.keys():
@@ -654,34 +903,55 @@ def voc_eval(
             imagename = str(imagename)
         unknown_class_recs[imagename] = {"bbox": bbox, "difficult": difficult, "det": det}
 
-    if classname == "unknown":
-        return rec, prec, ap, 0, n_unk, None, None
+    return unknown_class_recs, n_unk
 
-    # Go down each detection and see if it has an overlap with an unknown object.
-    # If so, it is an unknown object that was classified as known.
+
+def _get_unk_det_as_known(
+    nd: int,
+    image_ids: List[str],
+    b_box: np.ndarray,
+    unknown_class_recs: Dict[str, Dict[str, Union[np.ndarray, List[bool], List[bool]]]],
+    ovthresh: float,
+) -> Tuple[float, np.ndarray, np.ndarray]:
+    """
+    Determines which detections of a specific class are actually unknown objects that were classified as known.
+
+    Args:
+        nd: Number of detections for the class.
+        image_ids: List of image ids for the detections.
+        b_box: Array of bounding boxes for the detections.
+        unknown_class_recs: Dictionary of ground-truth annotations for the unknown class, where keys are image ids and values
+            are dictionaries containing:
+            - "bbox": An array of bounding boxes for the objects of the unknown class in the image.
+            - "difficult": A boolean array indicating whether each object is marked as difficult.
+            - "det": A list of booleans initialized to False, indicating whether each object has been detected or not.
+        ovthresh: Minimum overlap threshold (IoU) for a detection to be considered as an unknown object classified as known.
+
+    Returns:
+        Tuple: A tuple with the image ids, confidence scores, bounding boxes and method scores for the detections
+            of a specific class.
+    """
     is_unk = np.zeros(nd)
     for d in range(nd):
         if image_ids[d] in unknown_class_recs.keys():
             R = unknown_class_recs[image_ids[d]]
         else:
             continue
-        bb = BB[d, :].astype(float)
+        bb = b_box[d, :].astype(float)
         ovmax = -np.inf
         BBGT = R["bbox"].astype(float)
 
         if BBGT.size > 0:
             overlaps = _compute_overlaps(BBGT, bb)
             ovmax = np.max(overlaps)
-            jmax = np.argmax(overlaps)
+            # jmax = np.argmax(overlaps)
 
         if ovmax > ovthresh:
             is_unk[d] = 1.0
 
     is_unk_sum = np.sum(is_unk)
-    tp_plus_fp_closed_set = tp + fp
     fp_open_set = np.cumsum(is_unk)
-
-    return rec, prec, ap, is_unk_sum, n_unk, tp_plus_fp_closed_set, fp_open_set
+    return is_unk_sum, fp_open_set, is_unk
 
 
 def _compute_overlaps(BBGT: np.ndarray, bb: np.ndarray) -> np.ndarray:
@@ -830,21 +1100,31 @@ def evaluate_open_set_detection_one_method(
         # If using ID val subset, process only if in the used subset
         if (using_subset and im_id in using_subset) or not using_subset:
             if len(im_pred["boxes"]) > 0:
-                labels, scores = get_labels_and_scores_from_logits(im_pred["logits"])
+                labels, softmax_scores = get_labels_and_scores_from_logits(im_pred["logits"])
                 boxes = get_boxes_from_precalculated(im_pred["boxes"])
+                method_scores = np.array(predictions_dict[im_id][method_name])
                 if not is_open_set_model:
                     # Postprocess according to score and threshold
-                    unk_boxes = np.where(np.array(predictions_dict[im_id][method_name]) < threshold)
+                    unk_boxes = np.where(method_scores < threshold)
                 else:
                     unk_boxes = np.where(labels == unk_class_number)
                 labels[unk_boxes] = evaluator.unknown_class_index
                 # If min_conf_score is set, filter predictions by confidence score before adding to evaluator
                 if min_conf_score is not None:
-                    labels, scores, boxes = _filter_predictions_by_conf_score(
-                        labels, scores, boxes, min_conf_score
+                    labels, softmax_scores, boxes, method_scores = (
+                        _filter_predictions_by_conf_score(
+                            labels, softmax_scores, boxes, method_scores, min_conf_score
+                        )
                     )
-                # Add results to evaluator
-                evaluator.process(im_id, boxes, scores, labels)
+                if len(softmax_scores) > 0:
+                    # Add results to evaluator
+                    evaluator.process(
+                        image_id=im_id,
+                        boxes=boxes,
+                        softmax_scores=softmax_scores,
+                        method_scores=method_scores,
+                        classes=labels,
+                    )
 
     evaluation_results = evaluator.evaluate(
         test_gt_annotations_path,
@@ -855,9 +1135,87 @@ def evaluate_open_set_detection_one_method(
     return evaluation_results
 
 
+def get_boxes_gtu_and_uu_ood_dataset(
+    id_dataset_name: str,
+    id_gt_annotations_path: str,
+    predictions_dict: Dict,
+    method_name: str,
+    test_gt_annotations_path: str,
+    metric_2007: bool,
+    evaluating_ood: bool,
+    using_subset: Optional[List[Union[str, int]]] = False,
+    min_conf_score: Optional[float] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Returns the GTU (Ground Truth Unknown) and UU (Unknown Unknown) method scores for an OOD dataset.
+
+    Args:
+        id_dataset_name (str): The name of the in-distribution dataset being
+            evaluated.
+        id_gt_annotations_path (str): Path to the ground-truth annotations file
+            of the in-distribution dataset.
+        predictions_dict (Dict): Dictionary containing prediction results for
+            each image, including bounding boxes, logits, and other relevant
+            information.
+        method_name (str): The key name in predictions_dict representing the
+            method-specific prediction scores or metrics.
+        test_gt_annotations_path (str): Path to the ground-truth annotations file
+            used for evaluation.
+        metric_2007 (bool): Flag indicating whether to use the evaluation metric
+            from 2007 or the newer evaluation setup.
+        evaluating_ood (bool): Indicates whether the evaluation is for
+            a fully out-of-distribution dataset (No ID samples).
+        using_subset (Optional[List[Union[str, int]]], optional): Subset of
+            image IDs to evaluate on, or False if not applicable.
+        min_conf_score (Optional[float], optional): Minimum confidence score to calculate metrics on.
+            If None, all predictions are considered.
+
+    Returns:
+        Dict[str, float]: A dictionary of evaluation results containing metric
+        names as keys and their respective scores as values.
+    """
+    evaluator = OpenSetEvaluator(id_dataset_name, id_gt_annotations_path, metric_2007=metric_2007)
+    evaluator.reset()
+    for im_id, im_pred in predictions_dict.items():
+        # If using ID val subset, process only if in the used subset
+        if (using_subset and im_id in using_subset) or not using_subset:
+            if len(im_pred["boxes"]) > 0:
+                labels, softmax_scores = get_labels_and_scores_from_logits(im_pred["logits"])
+                boxes = get_boxes_from_precalculated(im_pred["boxes"])
+                method_scores = np.array(predictions_dict[im_id][method_name])
+                # No need to tag unknown objects using a threshold for this function,
+                # as we want to get the method scores for all predictions, to calculate auroc and fpr
+                if min_conf_score is not None:
+                    labels, softmax_scores, boxes, method_scores = (
+                        _filter_predictions_by_conf_score(
+                            labels, softmax_scores, boxes, method_scores, min_conf_score
+                        )
+                    )
+                if len(labels) > 0:
+                    # Add results to evaluator
+                    evaluator.process(
+                        image_id=im_id,
+                        boxes=boxes,
+                        softmax_scores=softmax_scores,
+                        method_scores=method_scores,
+                        classes=labels,
+                    )
+
+    method_scores_gtu, method_scores_uu = evaluator.get_boxes_gtu_uu(
+        test_gt_annotations_path,
+        is_ood=evaluating_ood,
+        using_subset=using_subset,
+    )
+    return method_scores_gtu, method_scores_uu
+
+
 def _filter_predictions_by_conf_score(
-    labels: np.ndarray, scores: np.ndarray, boxes: np.ndarray, min_conf_score: float
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:  # pragma: no cover
+    labels: np.ndarray,
+    softmax_scores: np.ndarray,
+    boxes: np.ndarray,
+    method_scores: np.ndarray,
+    min_conf_score: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:  # pragma: no cover
     """
     Filters predictions based on a minimum confidence score threshold.
 
@@ -868,8 +1226,9 @@ def _filter_predictions_by_conf_score(
 
     Args:
         labels (np.ndarray): Array of predicted class labels for each detection.
-        scores (np.ndarray): Array of confidence scores corresponding to each detection.
+        softmax_scores (np.ndarray): Array of confidence scores corresponding to each detection.
         boxes (np.ndarray): Array of bounding boxes corresponding to each detection.
+        method_scores (np.ndarray): Array of method-specific scores used for determining unknown class predictions
         min_conf_score (float): The minimum confidence score threshold for filtering predictions.
 
     Returns:
@@ -877,9 +1236,15 @@ def _filter_predictions_by_conf_score(
             - Filtered labels that meet the confidence score threshold.
             - Filtered scores that meet the confidence score threshold.
             - Filtered bounding boxes that meet the confidence score threshold.
+            - Filtered method scores that meet the confidence score threshold.
     """
-    valid_indices = np.where(scores >= min_conf_score)
-    return labels[valid_indices], scores[valid_indices], boxes[valid_indices]
+    valid_indices = np.where(softmax_scores >= min_conf_score)
+    return (
+        labels[valid_indices],
+        softmax_scores[valid_indices],
+        boxes[valid_indices],
+        method_scores[valid_indices],
+    )
 
 
 def get_boxes_from_precalculated(boxes: Union[torch.Tensor, np.ndarray, list]) -> np.ndarray:
@@ -1337,7 +1702,7 @@ def convert_osod_results_for_mlflow_logging(
 
 def get_n_unk_ood_dataset(annotations_path: str):
     """
-    Calculates and returns the number of unknown instances for an OOD dataset based on the provided annotations path.
+    Calculates and returns the number of unknown instances for an OOD dataset based on the provided annotations' path.
     Since it expects an OOD dataset annotations path, the function assumes that all instances are unknown.
 
     This function utilizes the COCOParser class to parse the given annotations file,
