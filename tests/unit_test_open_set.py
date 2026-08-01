@@ -24,6 +24,8 @@ from runia_core.evaluation.open_set import (
     get_n_unk_ood_dataset,
     evaluate_open_set_detection_one_method,
     get_overall_open_set_results,
+    get_gtu_coverage,
+    _max_iou_per_gt,
 )
 
 # Test parameters
@@ -1080,6 +1082,159 @@ class TestGetOverallOpenSetResults(TestCase):
 
         self.assertIsInstance(results, dict)
         self.assertIn("id_dataset", results)
+
+
+class TestMaxIouPerGt(TestCase):
+    """Test suite for the _max_iou_per_gt helper function."""
+
+    def test_max_iou_per_gt_basic(self):
+        """Test max IoU per ground-truth box against several predicted boxes."""
+        gt_boxes = np.array([[0, 0, 10, 10], [100, 100, 110, 110]])
+        pred_boxes = np.array([[0, 0, 10, 10], [200, 200, 210, 210]])
+        max_ious = _max_iou_per_gt(gt_boxes, pred_boxes)
+        self.assertEqual(max_ious[0], 1.0)
+        self.assertEqual(max_ious[1], 0.0)
+
+    def test_max_iou_per_gt_empty_predictions(self):
+        """Test max IoU per ground-truth box when there are no predicted boxes."""
+        gt_boxes = np.array([[0, 0, 10, 10]])
+        pred_boxes = np.empty((0, 4))
+        max_ious = _max_iou_per_gt(gt_boxes, pred_boxes)
+        self.assertEqual(max_ious[0], 0.0)
+
+
+class TestGetGtuCoverage(TestCase):
+    """Test suite for the get_gtu_coverage function (C_GTU metric)."""
+
+    def setUp(self):
+        """Create a temporary COCO format JSON file for an OOD dataset, with two images,
+        each containing a single ground-truth unknown object."""
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.coco_path = os.path.join(self.temp_dir.name, "ood_annotations.json")
+
+        self.coco_data = {
+            "info": {"description": "OOD dataset"},
+            "images": [
+                {"id": 1, "file_name": "img1.jpg", "height": 480, "width": 640},
+                {"id": 2, "file_name": "img2.jpg", "height": 480, "width": 640},
+            ],
+            "categories": [{"id": 1, "name": "unknown", "supercategory": "unknown"}],
+            "annotations": [
+                {
+                    "id": 1,
+                    "image_id": 1,
+                    "category_id": 1,
+                    "bbox": [10, 10, 50, 50],  # xyxy: [10, 10, 60, 60]
+                    "area": 2500,
+                    "iscrowd": 0,
+                },
+                {
+                    "id": 2,
+                    "image_id": 2,
+                    "category_id": 1,
+                    "bbox": [50, 50, 40, 40],  # xyxy: [50, 50, 90, 90]
+                    "area": 1600,
+                    "iscrowd": 0,
+                },
+            ],
+        }
+
+        with open(self.coco_path, "w") as f:
+            json.dump(self.coco_data, f)
+
+    def tearDown(self):
+        """Clean up temporary files."""
+        self.temp_dir.cleanup()
+
+    def test_get_gtu_coverage_partial_coverage(self):
+        """One GT unknown is covered by a matching high-confidence box, the other is not."""
+        predictions_dict = {
+            1: {
+                "boxes": np.array([[10, 10, 60, 60]]),  # perfectly matches image 1's GT
+                "logits": np.array([[5.0, 0.0]]),  # high confidence
+            },
+            2: {
+                "boxes": np.array([[200, 200, 210, 210]]),  # does not overlap image 2's GT
+                "logits": np.array([[5.0, 0.0]]),  # high confidence
+            },
+        }
+        coverage = get_gtu_coverage(
+            predictions_dict=predictions_dict,
+            test_gt_annotations_path=self.coco_path,
+            confidence_thresholds=0.5,
+        )
+        self.assertIn(0.5, coverage)
+        self.assertAlmostEqual(coverage[0.5], 0.5)
+
+    def test_get_gtu_coverage_full_coverage(self):
+        """Both GT unknowns are covered when both are matched by high-confidence boxes."""
+        predictions_dict = {
+            1: {
+                "boxes": np.array([[10, 10, 60, 60]]),
+                "logits": np.array([[5.0, 0.0]]),
+            },
+            2: {
+                "boxes": np.array([[50, 50, 90, 90]]),
+                "logits": np.array([[5.0, 0.0]]),
+            },
+        }
+        coverage = get_gtu_coverage(
+            predictions_dict=predictions_dict,
+            test_gt_annotations_path=self.coco_path,
+            confidence_thresholds=[0.5],
+        )
+        self.assertAlmostEqual(coverage[0.5], 1.0)
+
+    def test_get_gtu_coverage_threshold_filters_out_boxes(self):
+        """A threshold higher than the box confidence filters it out, dropping coverage to 0."""
+        predictions_dict = {
+            1: {
+                "boxes": np.array([[10, 10, 60, 60]]),
+                "logits": np.array([[5.0, 0.0]]),
+            },
+            2: {
+                "boxes": np.array([[50, 50, 90, 90]]),
+                "logits": np.array([[5.0, 0.0]]),
+            },
+        }
+        coverage = get_gtu_coverage(
+            predictions_dict=predictions_dict,
+            test_gt_annotations_path=self.coco_path,
+            confidence_thresholds=0.999999,
+        )
+        self.assertAlmostEqual(coverage[0.999999], 0.0)
+
+    def test_get_gtu_coverage_threshold_sweep(self):
+        """A sweep of thresholds returns one coverage value per threshold."""
+        predictions_dict = {
+            1: {
+                "boxes": np.array([[10, 10, 60, 60]]),
+                "logits": np.array([[5.0, 0.0]]),
+            },
+            2: {
+                "boxes": np.array([[50, 50, 90, 90]]),
+                "logits": np.array([[0.0, 0.0]]),  # confidence 0.5
+            },
+        }
+        thresholds = [0.1, 0.6]
+        coverage = get_gtu_coverage(
+            predictions_dict=predictions_dict,
+            test_gt_annotations_path=self.coco_path,
+            confidence_thresholds=thresholds,
+        )
+        self.assertEqual(set(coverage.keys()), {0.1, 0.6})
+        # At the low threshold both boxes are kept, at the high one only image 1's box survives
+        self.assertAlmostEqual(coverage[0.1], 1.0)
+        self.assertAlmostEqual(coverage[0.6], 0.5)
+
+    def test_get_gtu_coverage_empty_predictions(self):
+        """No predictions at all yields zero coverage."""
+        coverage = get_gtu_coverage(
+            predictions_dict={},
+            test_gt_annotations_path=self.coco_path,
+            confidence_thresholds=0.5,
+        )
+        self.assertAlmostEqual(coverage[0.5], 0.0)
 
 
 if __name__ == "__main__":

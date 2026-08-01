@@ -179,12 +179,17 @@ def get_aggregated_data_dict(
         aggregated_data_dict[f"{dataset_name} logits"] = torch.cat(all_logits, dim=0).cpu().numpy()
 
     all_latent_space_means = []
+    # Handle legacy naming for latent space means, as in previous versions "means" was used instead of "latent_space_means"
+    if "latent_space_means" in data_dict[f"{dataset_name}"][list(data_dict[f"{dataset_name}"].keys())[0]].keys():
+        latent_space_means_name = "latent_space_means"
+    else:
+        latent_space_means_name = "means"
     non_empty_predictions_ids[dataset_name] = []
     for im_id, im_results in data_dict[f"{dataset_name}"].items():
-        if len(im_results["latent_space_means"]) > 0:
-            all_latent_space_means.append(im_results["latent_space_means"])
+        if len(im_results[latent_space_means_name]) > 0:
+            all_latent_space_means.append(im_results[latent_space_means_name])
             non_empty_predictions_ids[dataset_name].extend(
-                [im_id] * len(im_results["latent_space_means"])
+                [im_id] * len(im_results[latent_space_means_name])
             )
     aggregated_data_dict[f"{dataset_name} latent_space_means"] = (
         torch.cat(all_latent_space_means, dim=0).cpu().numpy()

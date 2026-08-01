@@ -19,7 +19,7 @@ import torchmetrics.functional as tmf
 import seaborn as sns
 from collections import defaultdict
 
-from runia_core.evaluation.open_set import get_boxes_gtu_and_uu_ood_dataset
+from runia_core.evaluation.open_set import get_boxes_gtu_and_uu_ood_dataset, get_gtu_coverage
 from runia_core.inference.postprocessors import postprocessors_dict
 
 __all__ = [
@@ -31,6 +31,8 @@ __all__ = [
     "log_evaluate_postprocessors",
     "select_and_log_best_larex",
     "subset_boxes",
+    "get_gtu_coverage_metrics",
+    "plot_gtu_coverage_metrics",
 ]
 
 
@@ -498,12 +500,22 @@ def subset_boxes(
         "train latent_space_means" in ind_dict.keys()
         and ind_dict["train latent_space_means"].shape[0] > ind_train_limit
     ):
+        non_empty_train = defaultdict(int)
+        for im_id in non_empty_predictions_id["train"]:
+            non_empty_train[im_id] += 1
+        avg_obj_per_id_img = int(ind_dict["train latent_space_means"].shape[0] / len(non_empty_train))
+        choice_train = np.random.choice(
+            list(non_empty_train.keys()), size=int(ind_train_limit / avg_obj_per_id_img), replace=False
+        )
+        chosen_idx_train = []
+        choice_train = np.delete(choice_train, np.where(choice_train == "default_factory"))
+        for i, idx in enumerate(non_empty_predictions_id["train"]):
+            if idx in choice_train:
+                chosen_idx_train.append(i)
         print(
-            f"Subsetting train set to {ind_train_limit} from {ind_dict['train latent_space_means'].shape[0]} extracted boxes"
+            f"Subsetting train set to {len(chosen_idx_train)} from {ind_dict['train latent_space_means'].shape[0]} extracted boxes"
         )
-        chosen_idx_train = np.random.choice(
-            ind_dict["train latent_space_means"].shape[0], size=ind_train_limit, replace=False
-        )
+    
         ind_dict["train latent_space_means"] = ind_dict["train latent_space_means"][
             chosen_idx_train
         ]
@@ -511,18 +523,22 @@ def subset_boxes(
             ind_dict["train logits"] = ind_dict["train logits"][chosen_idx_train, :]
         if "train features" in ind_dict.keys():
             ind_dict["train features"] = ind_dict["train features"][chosen_idx_train, :]
+        if non_empty_predictions_id is not None:
+            non_empty_predictions_id["train"] = [
+                non_empty_predictions_id["train"][i] for i in chosen_idx_train
+            ]
 
     # Subset InD valid to be the same size as the ood length
     if (
         "valid latent_space_means" in ind_dict.keys()
         and ind_dict["valid latent_space_means"].shape[0] > ood_limit
     ):
-        non_emp_test = defaultdict(int)
+        non_empty_test = defaultdict(int)
         for im_id in non_empty_predictions_id["valid"]:
-            non_emp_test[im_id] += 1
-        avg_obj_per_id_img = int(ind_dict["valid latent_space_means"].shape[0] / len(non_emp_test))
+            non_empty_test[im_id] += 1
+        avg_obj_per_id_img = int(ind_dict["valid latent_space_means"].shape[0] / len(non_empty_test))
         choice_test = np.random.choice(
-            list(non_emp_test.keys()), size=int(ood_limit / avg_obj_per_id_img), replace=False
+            list(non_empty_test.keys()), size=int(ood_limit / avg_obj_per_id_img), replace=False
         )
         chosen_idx_valid = []
         choice_test = np.delete(choice_test, np.where(choice_test == "default_factory"))
@@ -614,7 +630,8 @@ def get_gtu_uu_metrics(
     for method in methods_names:
         id_valid_scores[method] = []
         for im_id, pred_dict in ind_data_dict["valid"].items():
-            id_valid_scores[method].extend(pred_dict[method])
+            if method in pred_dict.keys(): 
+                id_valid_scores[method].extend(pred_dict[method])
 
         id_valid_scores[method] = np.array([id_valid_scores[method]]).squeeze()
 
@@ -655,3 +672,129 @@ def get_gtu_uu_metrics(
             results[ood_dataset_name][method]["uu"] = results_uu
 
     return results
+
+
+def get_gtu_coverage_metrics(
+    ood_data_dict: Dict,
+    ood_datasets_names: List[str],
+    ood_annotations_paths: Dict[str, str],
+    confidence_thresholds: Union[float, List[float], np.ndarray],
+    using_subset: Optional[List[Union[str, int]]] = False,
+    ovthresh: float = 0.5,
+) -> Dict[str, Dict[float, float]]:
+    """
+    Computes the C_GTU(t*) ground-truth-unknown coverage curve for each OOD dataset.
+
+    Unlike the other open-set metrics in this module, C_GTU only depends on the base
+    detector's own boxes and their detection confidence, not on any post-hoc OOD scorer: it
+    measures the upper bound on unknown-recall that any such scorer could possibly reach once
+    boxes are cut at each threshold t*.
+
+    Args:
+        ood_data_dict: Dictionary with the OoD predictions, in the format
+            {ood_dataset_name: {image_id: {"boxes": ..., "logits": ...}}}.
+        ood_datasets_names: List of strings with the names of the OoD datasets.
+        ood_annotations_paths: Dictionary with keys as OoD dataset names and values as strings
+            with the paths to their GT annotations.
+        confidence_thresholds: One or several detection-confidence thresholds t* to evaluate.
+        using_subset: Optional subset of image ids to restrict the evaluation to. Defaults to
+            False (use all images).
+        ovthresh: Minimum IoU for a base detector box to be considered as covering a
+            ground-truth unknown. Defaults to 0.5.
+
+    Returns:
+        Dict[str, Dict[float, float]]: Dictionary with keys as OoD dataset names and values as
+            dictionaries mapping each threshold t* to its C_GTU(t*) value.
+    """
+    results = {}
+    for ood_dataset_name in ood_datasets_names:
+        results[ood_dataset_name] = get_gtu_coverage(
+            predictions_dict=ood_data_dict[ood_dataset_name],
+            test_gt_annotations_path=ood_annotations_paths[ood_dataset_name],
+            confidence_thresholds=confidence_thresholds,
+            using_subset=using_subset,
+            ovthresh=ovthresh,
+        )
+    return results
+
+
+def plot_gtu_coverage_metrics(
+    gtu_coverage: Dict[str, Dict[float, float]],
+    ind_dataset_name: str = None,
+    save_path: Optional[str] = None,
+) -> None:
+    """
+    Plots the C_GTU(t*) ground-truth-unknown coverage curves returned by
+    `get_gtu_coverage_metrics` in a single figure for the given InD dataset:
+    detection-confidence threshold t* on the x axis, coverage C(t*) on the y axis,
+    with one line per OOD dataset.
+    """
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+        "font.size": 12,
+        "axes.titlesize": 13,
+        "axes.titleweight": "bold",
+        "axes.labelsize": 12,
+        "axes.edgecolor": "#c3c2b7",
+        "axes.linewidth": 1.0,
+        "xtick.color": "#52514e",
+        "ytick.color": "#52514e",
+        "xtick.labelsize": 10.5,
+        "ytick.labelsize": 10.5,
+        "axes.grid": True,
+        "grid.color": "#e1e0d9",
+        "grid.linewidth": 0.8,
+        "grid.linestyle": "--",
+        "figure.dpi": 120,
+        "savefig.dpi": 300,
+    })
+    # Fixed categorical order (never cycled/reassigned by filtering) + a matching marker shape
+    # per slot, used as a secondary (non-color) encoding of series identity.
+    _CATEGORICAL_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"]
+    _CATEGORICAL_MARKERS = ["o", "s", "^", "D", "v", "P", "X", "*"]
+
+    fig, ax = plt.subplots(figsize=(6.8, 4.8))
+
+    all_thresholds = []
+    max_coverage_pct = 0.0
+    for idx, (ood_dataset_name, threshold_to_coverage) in enumerate(gtu_coverage.items()):
+        thresholds = np.array(sorted(threshold_to_coverage.keys()))
+        coverage_pct = np.array([threshold_to_coverage[t] for t in thresholds]) * 100.0
+        all_thresholds.append(thresholds)
+        max_coverage_pct = max(max_coverage_pct, coverage_pct.max())
+
+        color = _CATEGORICAL_COLORS[idx % len(_CATEGORICAL_COLORS)]
+        marker = _CATEGORICAL_MARKERS[idx % len(_CATEGORICAL_MARKERS)]
+        ax.plot(
+            thresholds, coverage_pct,
+            color=color, linewidth=2.5, solid_capstyle="round",
+            marker=marker, markersize=6, markerfacecolor="white",
+            markeredgecolor=color, markeredgewidth=1.6,
+            label=ood_dataset_name.upper(), zorder=3, alpha=0.7
+        )
+
+    ax.set_xlabel(r"Detection-confidence threshold $t^{*}$")
+    ax.set_ylabel(r"GTU Coverage $C_{GTU}(t^{*})$ [%]")
+    title = "GT-Unknown Coverage"
+    if ind_dataset_name:
+        title += f" — InD: {ind_dataset_name.upper()}"
+    ax.set_title(title, pad=12)
+
+    all_thresholds = np.concatenate(all_thresholds)
+    ax.set_xlim(all_thresholds.min() - 0.02, all_thresholds.max() + 0.02)
+    ax.set_ylim(0, max(100.0, max_coverage_pct * 1.05))
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#c3c2b7")
+    ax.spines["bottom"].set_color("#c3c2b7")
+    ax.tick_params(axis="both", which="both", length=3)
+    ax.grid(color="#e1e0d9", linewidth=0.8, linestyle="--", zorder=0)
+    ax.set_axisbelow(True)
+    ax.legend(title="OOD dataset", frameon=False, loc="best", fontsize=10.5, title_fontsize=10.5)
+
+    fig.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.show()

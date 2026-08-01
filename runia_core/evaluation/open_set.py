@@ -20,6 +20,7 @@ __all__ = [
     "plot_two_osod_datasets_metrics",
     "plot_two_osod_datasets_per_metric",
     "get_boxes_gtu_and_uu_ood_dataset",
+    "get_gtu_coverage",
 ]
 
 
@@ -1720,3 +1721,96 @@ def get_n_unk_ood_dataset(annotations_path: str):
     im_ids = annotations.get_imgIds()
     ann_ids = annotations.get_annIds(im_ids)
     return len(ann_ids)
+
+
+def _max_iou_per_gt(gt_boxes: np.ndarray, pred_boxes: np.ndarray) -> np.ndarray:
+    """
+    Computes, for each ground-truth box, the maximum IoU obtained against any of the given
+    predicted boxes.
+
+    Args:
+        gt_boxes (np.ndarray): Array of ground-truth bounding boxes in [x_min, y_min, x_max, y_max]
+            format.
+        pred_boxes (np.ndarray): Array of predicted bounding boxes in the same format. May be empty.
+
+    Returns:
+        np.ndarray: Array with the maximum IoU obtained for each ground-truth box (0 if
+            `pred_boxes` is empty).
+    """
+    max_ious = np.zeros(gt_boxes.shape[0])
+    for bb in pred_boxes:
+        max_ious = np.maximum(max_ious, _compute_overlaps(gt_boxes, bb))
+    return max_ious
+
+
+def get_gtu_coverage(
+    predictions_dict: Dict,
+    test_gt_annotations_path: str,
+    confidence_thresholds: Union[float, List[float], np.ndarray],
+    using_subset: Optional[List[Union[str, int]]] = False,
+    ovthresh: float = 0.5,
+) -> Dict[float, float]:
+    """
+    Computes C_GTU(t*): the fraction of ground-truth unknowns reachable by the base detector's
+    own boxes at a given detection-confidence threshold t*.
+
+    All annotations in `test_gt_annotations_path` are assumed to be ground-truth unknowns
+    (Y^U_OOD), which is the case for an OOD dataset's annotations (see `get_n_unk_ood_dataset`).
+    For each threshold t* in `confidence_thresholds`, a ground-truth unknown u counts towards
+    the numerator if at least one base detector box b_i (regardless of its predicted class)
+    with detection confidence >= t* has IoU(b_i, u) >= ovthresh. Since this only depends on the
+    raw detector boxes and their own detection confidence, it does not depend on any post-hoc
+    OOD scorer: it measures the upper bound on unknown-recall that any such scorer could
+    possibly reach once boxes are cut at t*.
+
+    Args:
+        predictions_dict: Dictionary containing prediction results for each image, in the
+            format {image_id: {"boxes": ..., "logits": ...}}.
+        test_gt_annotations_path: Path to the ground-truth annotations file (in COCO format) of
+            the OOD dataset, where every annotation is treated as a ground-truth unknown.
+        confidence_thresholds: One or several detection-confidence thresholds t* to evaluate.
+        using_subset: Optional subset of image ids to restrict the evaluation to. Defaults to
+            False (use all images).
+        ovthresh: Minimum IoU for a base detector box to be considered as covering a
+            ground-truth unknown. Defaults to 0.5.
+
+    Returns:
+        Dict[float, float]: A dictionary mapping each threshold t* in `confidence_thresholds`
+            to its corresponding C_GTU(t*) value.
+    """
+    test_annotations = COCOParser(test_gt_annotations_path, using_subset)
+
+    gt_boxes_per_image = {}
+    for imagename, anns in test_annotations.annIm_dict.items():
+        imagename = str(imagename) if isinstance(imagename, int) else imagename
+        gt_boxes_per_image[imagename] = np.array(
+            [convert_xywh_to_xyxy(ann["bbox"]) for ann in anns]
+        ).reshape(-1, 4)
+
+    boxes_per_image = {}
+    confidence_per_image = {}
+    for im_id, im_pred in predictions_dict.items():
+        if (using_subset and im_id in using_subset) or not using_subset:
+            if len(im_pred["boxes"]) > 0:
+                _, confidence = get_labels_and_scores_from_logits(im_pred["logits"])
+                imagename = str(im_id)
+                boxes_per_image[imagename] = get_boxes_from_precalculated(im_pred["boxes"])
+                confidence_per_image[imagename] = confidence
+
+    thresholds = np.atleast_1d(np.array(confidence_thresholds, dtype=float))
+    coverage = {}
+    for t in thresholds:
+        n_covered = 0
+        n_total = 0
+        for imagename, gt_boxes in gt_boxes_per_image.items():
+            if gt_boxes.size == 0:
+                continue
+            n_total += gt_boxes.shape[0]
+            boxes = boxes_per_image.get(imagename)
+            confidence = confidence_per_image.get(imagename)
+            if boxes is None or not np.any(confidence >= t):
+                continue
+            max_ious = _max_iou_per_gt(gt_boxes, boxes[confidence >= t])
+            n_covered += int(np.sum(max_ious >= ovthresh))
+        coverage[float(t)] = n_covered / n_total if n_total > 0 else 0.0
+    return coverage

@@ -1,9 +1,13 @@
+import json
+import os
+import tempfile
 from unittest import TestCase, main
 import numpy as np
 from runia_core.evaluation.metrics import (
     get_auroc_results,
     log_evaluate_postprocessors,
     subset_boxes,
+    get_gtu_coverage_metrics,
 )
 
 #########################################################################
@@ -461,6 +465,74 @@ class TestSubsetBoxes(TestCase):
         self.assertEqual(result_ind["valid latent_space_means"].shape[1], self.latent_dim)
         for ood_name in self.ood_names:
             self.assertEqual(result_ood[f"{ood_name} latent_space_means"].shape[1], self.latent_dim)
+
+
+class TestGetGtuCoverageMetrics(TestCase):
+    """Test cases for the get_gtu_coverage_metrics function (C_GTU metric across OOD datasets)"""
+
+    def setUp(self):
+        """Create temporary COCO format JSON files for two OOD datasets, each with a single
+        image containing one ground-truth unknown object."""
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.ood1_path = os.path.join(self.temp_dir.name, "ood1_annotations.json")
+        self.ood2_path = os.path.join(self.temp_dir.name, "ood2_annotations.json")
+
+        coco_data = {
+            "info": {"description": "OOD dataset"},
+            "images": [{"id": 1, "file_name": "img1.jpg", "height": 480, "width": 640}],
+            "categories": [{"id": 1, "name": "unknown", "supercategory": "unknown"}],
+            "annotations": [
+                {
+                    "id": 1,
+                    "image_id": 1,
+                    "category_id": 1,
+                    "bbox": [10, 10, 50, 50],  # xyxy: [10, 10, 60, 60]
+                    "area": 2500,
+                    "iscrowd": 0,
+                }
+            ],
+        }
+
+        with open(self.ood1_path, "w") as f:
+            json.dump(coco_data, f)
+        with open(self.ood2_path, "w") as f:
+            json.dump(coco_data, f)
+
+    def tearDown(self):
+        """Clean up temporary files."""
+        self.temp_dir.cleanup()
+
+    def test_get_gtu_coverage_metrics_basic(self):
+        """Test that coverage is computed independently for each OOD dataset."""
+        ood_data_dict = {
+            "ood_dataset1": {
+                1: {
+                    "boxes": np.array([[10, 10, 60, 60]]),  # matches the GT
+                    "logits": np.array([[5.0, 0.0]]),
+                }
+            },
+            "ood_dataset2": {
+                1: {
+                    "boxes": np.array([[200, 200, 210, 210]]),  # does not match the GT
+                    "logits": np.array([[5.0, 0.0]]),
+                }
+            },
+        }
+
+        results = get_gtu_coverage_metrics(
+            ood_data_dict=ood_data_dict,
+            ood_datasets_names=["ood_dataset1", "ood_dataset2"],
+            ood_annotations_paths={
+                "ood_dataset1": self.ood1_path,
+                "ood_dataset2": self.ood2_path,
+            },
+            confidence_thresholds=0.5,
+        )
+
+        self.assertIn("ood_dataset1", results)
+        self.assertIn("ood_dataset2", results)
+        self.assertAlmostEqual(results["ood_dataset1"][0.5], 1.0)
+        self.assertAlmostEqual(results["ood_dataset2"][0.5], 0.0)
 
 
 if __name__ == "__main__":
