@@ -38,7 +38,6 @@ from runia_core.evaluation.baselines import (
 from runia_core.inference.abstract_classes import get_baselines_thresholds
 from tests_architecture import Net
 
-
 # Configure module-level logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -61,6 +60,8 @@ BASELINES_NAMES = [
     "msp",
     "knn",
     "energy",
+    "max_logit",
+    "joint_energy",
     "ash",
     "dice",
     "react",
@@ -255,6 +256,12 @@ class TestBaselinesFromPrecalculated(TestCase):
         self.assertAlmostEqual(ood_baselines_scores["test_ood msp"].mean(), 0.07561022, delta=TOL)
         self.assertAlmostEqual(ood_baselines_scores["test_ood knn"].mean(), -0.28827268, delta=TOL)
         self.assertAlmostEqual(ood_baselines_scores["test_ood energy"].mean(), 3.5367718, delta=TOL)
+        self.assertAlmostEqual(
+            ood_baselines_scores["test_ood max_logit"].mean(), 0.95299315, delta=TOL
+        )
+        self.assertAlmostEqual(
+            ood_baselines_scores["test_ood joint_energy"].mean(), 19.696596, delta=TOL
+        )
         self.assertAlmostEqual(ood_baselines_scores["test_ood ash"].mean(), 437.55548, delta=TOL)
         self.assertAlmostEqual(ood_baselines_scores["test_ood gen"].mean(), -14.69404, delta=TOL)
         self.assertAlmostEqual(ood_baselines_scores["test_ood react"].mean(), 8.930155, delta=TOL)

@@ -32,6 +32,7 @@ import warnings
 import numpy as np
 import torch
 from omegaconf import DictConfig
+from scipy.special import softmax
 from torch import Tensor
 
 from runia_core.inference.postprocessors import (
@@ -40,11 +41,14 @@ from runia_core.inference.postprocessors import (
     ViM,
     Energy,
     GMMLatentSpace,
+    JointEnergy,
     KDELatentSpace,
     KNNLatentSpace,
     MDLatentSpace,
     Mahalanobis,
+    MaxLogit,
     cMDLatentSpace,
+    postprocessor_input_dict,
     postprocessors_dict,
 )
 
@@ -541,6 +545,270 @@ class TestEnergyPostprocessor(unittest.TestCase):
             0.0,
             delta=TOLERANCE,
         )
+
+
+class TestMaxLogitPostprocessor(unittest.TestCase):
+    """Test cases for the MaxLogit postprocessor."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        torch.manual_seed(SEED)
+        np.random.seed(SEED)
+        self.max_logit_processor = MaxLogit(flip_sign=True)
+        _, _, self.train_logits = generate_test_data(seed=SEED)
+        _, _, self.test_logits = generate_test_data(seed=SEED + 1)
+        logger.info("Setting up TestMaxLogitPostprocessor")
+
+    def test_max_logit_initialization(self):
+        """Test MaxLogit postprocessor initialization."""
+        self.assertTrue(self.max_logit_processor.flip_sign)
+        self.assertFalse(self.max_logit_processor._setup_flag)
+
+    def test_max_logit_setup(self):
+        """Test MaxLogit postprocessor setup method."""
+        self.max_logit_processor.setup(self.train_logits)
+
+        self.assertTrue(self.max_logit_processor._setup_flag)
+        self.assertIsNotNone(self.max_logit_processor.threshold)
+
+    def test_max_logit_postprocess(self):
+        """Test that the score is the largest raw logit of each sample."""
+        self.max_logit_processor.setup(self.train_logits)
+        scores = self.max_logit_processor.postprocess(self.test_logits)
+
+        self.assertIsInstance(scores, np.ndarray)
+        self.assertEqual(len(scores), len(self.test_logits))
+        self.assertTrue(np.all(np.isfinite(scores)))
+        # flip_sign is True for this fixture, hence the -1 factor on the reference
+        expected = -np.max(self.test_logits, axis=1)
+        self.assertAlmostEqual(float(np.max(np.abs(expected - scores))), 0.0, delta=TOLERANCE)
+
+    def test_max_logit_selects_argmax_entry(self):
+        """Test that the score is the logit sitting at the predicted class."""
+        processor = MaxLogit(flip_sign=False)
+        processor.setup(self.train_logits)
+        scores = processor.postprocess(self.test_logits)
+
+        predictions = np.argmax(self.test_logits, axis=1)
+        expected = self.test_logits[np.arange(len(self.test_logits)), predictions]
+        self.assertAlmostEqual(float(np.max(np.abs(expected - scores))), 0.0, delta=TOLERANCE)
+
+    def test_max_logit_differs_from_msp(self):
+        """Test that MaxLogit keeps the logit magnitude instead of softmax-normalizing it.
+
+        Two samples sharing the same logit differences have identical MSP scores but
+        different MaxLogit scores; this is the property that makes the two methods distinct.
+        """
+        logits = np.array([[1.0, 0.0, -1.0], [11.0, 10.0, 9.0]])
+        processor = MaxLogit(flip_sign=False)
+        processor.setup(logits)
+        scores = processor.postprocess(logits)
+
+        msp_scores = np.max(softmax(logits, axis=1), axis=1)
+        self.assertAlmostEqual(float(msp_scores[0]), float(msp_scores[1]), delta=TOLERANCE)
+        self.assertAlmostEqual(
+            float(np.max(np.abs(scores - np.array([1.0, 11.0])))), 0.0, delta=TOLERANCE
+        )
+
+    def test_max_logit_invariant_to_class_order(self):
+        """Test that permuting the class axis leaves the scores unchanged."""
+        processor = MaxLogit(flip_sign=False)
+        processor.setup(self.train_logits)
+        scores = processor.postprocess(self.test_logits)
+
+        rng = np.random.default_rng(SEED)
+        permutation = rng.permutation(self.test_logits.shape[1])
+        permuted_scores = processor.postprocess(self.test_logits[:, permutation])
+        self.assertAlmostEqual(
+            float(np.max(np.abs(scores - permuted_scores))), 0.0, delta=TOLERANCE
+        )
+
+    def test_max_logit_postprocess_without_setup(self):
+        """Test MaxLogit postprocessor postprocess without setup."""
+        with self.assertRaises(AssertionError) as context:
+            self.max_logit_processor.postprocess(self.test_logits)
+
+        self.assertIn("setup() must be called", str(context.exception))
+
+    def test_max_logit_postprocess_tensor_input(self):
+        """Test MaxLogit postprocessor with tensor input."""
+        self.max_logit_processor.setup(self.train_logits)
+        test_tensor = Tensor(self.test_logits)
+        scores = self.max_logit_processor.postprocess(test_tensor)
+
+        self.assertIsInstance(scores, np.ndarray)
+        self.assertEqual(len(scores), len(self.test_logits))
+        expected = -np.max(self.test_logits, axis=1)
+        self.assertAlmostEqual(float(np.max(np.abs(expected - scores))), 0.0, delta=TOLERANCE)
+
+    def test_max_logit_flip_sign(self):
+        """Test that flipping the sign only negates the scores."""
+        flipped = MaxLogit(flip_sign=True)
+        not_flipped = MaxLogit(flip_sign=False)
+        flipped.setup(self.train_logits)
+        not_flipped.setup(self.train_logits)
+
+        scores_flipped = flipped.postprocess(self.test_logits)
+        scores_not_flipped = not_flipped.postprocess(self.test_logits)
+
+        self.assertAlmostEqual(
+            float(np.max(np.abs(scores_flipped + scores_not_flipped))), 0.0, delta=TOLERANCE
+        )
+
+    def test_max_logit_registered(self):
+        """Test that MaxLogit is registered under the max_logit key."""
+        self.assertIn("max_logit", postprocessors_dict)
+        self.assertIs(postprocessors_dict["max_logit"], MaxLogit)
+        self.assertEqual(postprocessor_input_dict["max_logit"], ["logits"])
+
+
+def reference_joint_energy(logits: np.ndarray, method: str, k: int = 1) -> np.ndarray:
+    """Reference JointEnergy implementation, transcribed from the official repository.
+
+    See https://github.com/deeplearning-wisc/multi-label-ood (lib.py, get_logits):
+
+        E_f = torch.log(1+torch.exp(logits))
+        if method == "max": scores = torch.max(E_f, dim=1)[0]
+        if method == "sum": scores = torch.sum(E_f, dim=1)
+        if method == "topk": scores = torch.sum(torch.topk(E_f, k=k, dim=1)[0], dim=1)
+
+    Args:
+        logits: Array of logits of shape (n_samples, n_classes).
+        method: One of "sum", "max" or "topk".
+        k: Number of largest label-wise energies to sum when method is "topk".
+
+    Returns:
+        The reference scores, of shape (n_samples,).
+    """
+    e_f = torch.log(1 + torch.exp(torch.as_tensor(logits, dtype=torch.float64)))
+    if method == "max":
+        return torch.max(e_f, dim=1)[0].numpy()
+    if method == "topk":
+        return torch.sum(torch.topk(e_f, k=k, dim=1)[0], dim=1).numpy()
+    return torch.sum(e_f, dim=1).numpy()
+
+
+class TestJointEnergyPostprocessor(unittest.TestCase):
+    """Test cases for the JointEnergy postprocessor."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        torch.manual_seed(SEED)
+        np.random.seed(SEED)
+        self.joint_energy_processor = JointEnergy(flip_sign=True)
+        _, _, self.train_logits = generate_test_data(seed=SEED)
+        _, _, self.test_logits = generate_test_data(seed=SEED + 1)
+        logger.info("Setting up TestJointEnergyPostprocessor")
+
+    def test_joint_energy_initialization(self):
+        """Test JointEnergy postprocessor initialization and its defaults."""
+        self.assertTrue(self.joint_energy_processor.flip_sign)
+        self.assertEqual(self.joint_energy_processor.aggregation, "sum")
+        self.assertEqual(self.joint_energy_processor.top_k, 1)
+        self.assertFalse(self.joint_energy_processor._setup_flag)
+
+    def test_joint_energy_invalid_aggregation(self):
+        """Test that an unsupported aggregation is rejected at construction."""
+        with self.assertRaises(ValueError):
+            JointEnergy(flip_sign=False, aggregation="mean")
+
+    def test_joint_energy_invalid_top_k(self):
+        """Test that a non-positive top_k is rejected for the topk aggregation."""
+        with self.assertRaises(ValueError):
+            JointEnergy(flip_sign=False, aggregation="topk", top_k=0)
+
+    def test_joint_energy_setup(self):
+        """Test JointEnergy postprocessor setup method."""
+        self.joint_energy_processor.setup(self.train_logits)
+
+        self.assertTrue(self.joint_energy_processor._setup_flag)
+        self.assertIsNotNone(self.joint_energy_processor.threshold)
+
+    def test_joint_energy_postprocess(self):
+        """Test that the sum aggregation matches the official implementation."""
+        self.joint_energy_processor.setup(self.train_logits)
+        scores = self.joint_energy_processor.postprocess(self.test_logits)
+
+        self.assertIsInstance(scores, np.ndarray)
+        self.assertEqual(len(scores), len(self.test_logits))
+        self.assertTrue(np.all(np.isfinite(scores)))
+        # flip_sign is True for this fixture, hence the -1 factor on the reference
+        expected = -reference_joint_energy(self.test_logits, method="sum")
+        self.assertAlmostEqual(float(np.max(np.abs(expected - scores))), 0.0, delta=TOLERANCE)
+
+    def test_joint_energy_aggregations_match_reference(self):
+        """Test that every aggregation matches the official implementation."""
+        for aggregation, k in (("sum", 1), ("max", 1), ("topk", 3)):
+            with self.subTest(aggregation=aggregation):
+                processor = JointEnergy(flip_sign=False, aggregation=aggregation, top_k=k)
+                processor.setup(self.train_logits)
+                scores = processor.postprocess(self.test_logits)
+
+                expected = reference_joint_energy(self.test_logits, method=aggregation, k=k)
+                self.assertEqual(scores.shape, (len(self.test_logits),))
+                self.assertAlmostEqual(
+                    float(np.max(np.abs(expected - scores))), 0.0, delta=TOLERANCE
+                )
+
+    def test_joint_energy_topk_equals_sum_when_k_exceeds_classes(self):
+        """Test that topk falls back to summing all label-wise energies."""
+        processor = JointEnergy(flip_sign=False, aggregation="topk", top_k=TEST_NUM_CLASSES + 100)
+        processor.setup(self.train_logits)
+        scores = processor.postprocess(self.test_logits)
+
+        expected = reference_joint_energy(self.test_logits, method="sum")
+        self.assertAlmostEqual(float(np.max(np.abs(expected - scores))), 0.0, delta=TOLERANCE)
+
+    def test_joint_energy_numerically_stable_for_large_logits(self):
+        """Test that large logits do not overflow, unlike a naive log(1 + exp(x))."""
+        large_logits = np.full((4, TEST_NUM_CLASSES), 800.0, dtype=np.float64)
+        processor = JointEnergy(flip_sign=False)
+        processor.setup(large_logits)
+        scores = processor.postprocess(large_logits)
+
+        self.assertTrue(np.all(np.isfinite(scores)))
+        # For large x, log(1 + exp(x)) -> x, so the sum tends to num_classes * x
+        self.assertAlmostEqual(
+            float(np.max(np.abs(scores - 800.0 * TEST_NUM_CLASSES))), 0.0, delta=TOLERANCE
+        )
+
+    def test_joint_energy_postprocess_without_setup(self):
+        """Test JointEnergy postprocessor postprocess without setup."""
+        with self.assertRaises(AssertionError) as context:
+            self.joint_energy_processor.postprocess(self.test_logits)
+
+        self.assertIn("setup() must be called", str(context.exception))
+
+    def test_joint_energy_postprocess_tensor_input(self):
+        """Test JointEnergy postprocessor with tensor input."""
+        self.joint_energy_processor.setup(self.train_logits)
+        test_tensor = Tensor(self.test_logits)
+        scores = self.joint_energy_processor.postprocess(test_tensor)
+
+        self.assertIsInstance(scores, np.ndarray)
+        self.assertEqual(len(scores), len(self.test_logits))
+        expected = -reference_joint_energy(self.test_logits, method="sum")
+        self.assertAlmostEqual(float(np.max(np.abs(expected - scores))), 0.0, delta=TOLERANCE)
+
+    def test_joint_energy_flip_sign(self):
+        """Test that flipping the sign only negates the scores."""
+        flipped = JointEnergy(flip_sign=True)
+        not_flipped = JointEnergy(flip_sign=False)
+        flipped.setup(self.train_logits)
+        not_flipped.setup(self.train_logits)
+
+        scores_flipped = flipped.postprocess(self.test_logits)
+        scores_not_flipped = not_flipped.postprocess(self.test_logits)
+
+        self.assertAlmostEqual(
+            float(np.max(np.abs(scores_flipped + scores_not_flipped))), 0.0, delta=TOLERANCE
+        )
+
+    def test_joint_energy_registered(self):
+        """Test that JointEnergy is registered under the joint_energy key."""
+        self.assertIn("joint_energy", postprocessors_dict)
+        self.assertIs(postprocessors_dict["joint_energy"], JointEnergy)
+        self.assertEqual(postprocessor_input_dict["joint_energy"], ["logits"])
 
 
 class TestGENPostprocessor(unittest.TestCase):

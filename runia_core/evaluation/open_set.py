@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Union, Tuple
 
 import pandas as pd
 from matplotlib import pyplot as plt
-from scipy.special import softmax
+from scipy.special import softmax, expit
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -1146,6 +1146,7 @@ def get_boxes_gtu_and_uu_ood_dataset(
     evaluating_ood: bool,
     using_subset: Optional[List[Union[str, int]]] = False,
     min_conf_score: Optional[float] = None,
+    use_sigmoid: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Returns the GTU (Ground Truth Unknown) and UU (Unknown Unknown) method scores for an OOD dataset.
@@ -1170,6 +1171,11 @@ def get_boxes_gtu_and_uu_ood_dataset(
             image IDs to evaluate on, or False if not applicable.
         min_conf_score (Optional[float], optional): Minimum confidence score to calculate metrics on.
             If None, all predictions are considered.
+        use_sigmoid (bool): If True, computes detection confidence with sigmoid instead of
+            softmax when extracting scores from logits. Use this for predictions coming from
+            open-vocabulary detectors (e.g. Grounding DINO, OWL-ViT), whose class scores are
+            independent per-class probabilities. Keep the default of False (softmax) for
+            closed-vocabulary detectors. Defaults to False.
 
     Returns:
         Dict[str, float]: A dictionary of evaluation results containing metric
@@ -1181,7 +1187,9 @@ def get_boxes_gtu_and_uu_ood_dataset(
         # If using ID val subset, process only if in the used subset
         if (using_subset and im_id in using_subset) or not using_subset:
             if len(im_pred["boxes"]) > 0:
-                labels, softmax_scores = get_labels_and_scores_from_logits(im_pred["logits"])
+                labels, softmax_scores = get_labels_and_scores_from_logits(
+                    im_pred["logits"], use_sigmoid=use_sigmoid
+                )
                 boxes = get_boxes_from_precalculated(im_pred["boxes"])
                 method_scores = np.array(predictions_dict[im_id][method_name])
                 # No need to tag unknown objects using a threshold for this function,
@@ -1277,18 +1285,25 @@ def get_boxes_from_precalculated(boxes: Union[torch.Tensor, np.ndarray, list]) -
 
 
 def get_labels_and_scores_from_logits(
-    logits: Union[torch.Tensor, np.ndarray, list]
+    logits: Union[torch.Tensor, np.ndarray, list],
+    use_sigmoid: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Extracts predicted labels and their corresponding scores from the logits using the softmax function.
+    Extracts predicted labels and their corresponding scores from the logits.
 
-    The function takes a tensor, numpy array, or list representing the logits, applies the softmax
-    function, and computes the maximum predicted class and its corresponding score. If the logits have
-    a specific shape (21 or 11 classes), the function excludes the last column before determining the
-    predicted class and scores.
+    The function takes a tensor, numpy array, or list representing the logits, applies either the
+    softmax or the sigmoid function, and computes the maximum predicted class and its corresponding
+    score. With softmax (the default), if the logits have a specific shape (21 or 11 classes), the
+    function excludes the last column (background class) before determining the predicted class and
+    scores.
 
     Args:
         logits: The input logits, which can be a PyTorch tensor, a NumPy array, or a Python list.
+        use_sigmoid (bool): If True, applies the sigmoid function instead of softmax to obtain
+            per-class scores. This is intended for open-vocabulary detectors (e.g. Grounding DINO,
+            OWL-ViT), whose class scores are independent per-class probabilities rather than a
+            single softmax distribution over a fixed, closed set of classes. Closed-vocabulary
+            detectors should keep the default of False (softmax). Defaults to False.
 
     Returns:
         Tuple[np.ndarray, np.ndarray]: A tuple containing two numpy arrays:
@@ -1307,10 +1322,12 @@ def get_labels_and_scores_from_logits(
     else:
         raise ValueError("logits must be a torch.Tensor, np.ndarray or list")
 
-    # scores = softmax(logits, axis=-1).max(axis=-1)
-    scores = softmax(logits, axis=-1)
-    if logits.shape[1] == 21 or logits.shape[1] == 11:
-        scores = scores[:, :-1]
+    if use_sigmoid:
+        scores = expit(logits)
+    else:
+        scores = softmax(logits, axis=-1)
+        if logits.shape[1] == 21 or logits.shape[1] == 11:
+            scores = scores[:, :-1]
     pred_classes = np.argmax(scores, axis=-1)
     return pred_classes, scores.max(axis=-1)
 
@@ -1749,6 +1766,7 @@ def get_gtu_coverage(
     confidence_thresholds: Union[float, List[float], np.ndarray],
     using_subset: Optional[List[Union[str, int]]] = False,
     ovthresh: float = 0.5,
+    use_sigmoid: bool = False,
 ) -> Dict[float, float]:
     """
     Computes C_GTU(t*): the fraction of ground-truth unknowns reachable by the base detector's
@@ -1773,6 +1791,11 @@ def get_gtu_coverage(
             False (use all images).
         ovthresh: Minimum IoU for a base detector box to be considered as covering a
             ground-truth unknown. Defaults to 0.5.
+        use_sigmoid (bool): If True, computes detection confidence with sigmoid instead of
+            softmax when extracting scores from logits. Use this for predictions coming from
+            open-vocabulary detectors (e.g. Grounding DINO, OWL-ViT), whose class scores are
+            independent per-class probabilities. Keep the default of False (softmax) for
+            closed-vocabulary detectors. Defaults to False.
 
     Returns:
         Dict[float, float]: A dictionary mapping each threshold t* in `confidence_thresholds`
@@ -1792,7 +1815,9 @@ def get_gtu_coverage(
     for im_id, im_pred in predictions_dict.items():
         if (using_subset and im_id in using_subset) or not using_subset:
             if len(im_pred["boxes"]) > 0:
-                _, confidence = get_labels_and_scores_from_logits(im_pred["logits"])
+                _, confidence = get_labels_and_scores_from_logits(
+                    im_pred["logits"], use_sigmoid=use_sigmoid
+                )
                 imagename = str(im_id)
                 boxes_per_image[imagename] = get_boxes_from_precalculated(im_pred["boxes"])
                 confidence_per_image[imagename] = confidence

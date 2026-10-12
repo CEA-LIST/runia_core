@@ -14,7 +14,7 @@ import faiss
 import numpy as np
 import torch
 from omegaconf import DictConfig
-from scipy.special import logsumexp, softmax
+from scipy.special import logsumexp, softmax, expit
 from sklearn.covariance import EmpiricalCovariance
 from sklearn.neighbors import KernelDensity
 from torch import Tensor
@@ -32,7 +32,6 @@ from runia_core.inference.abstract_classes import (
     Postprocessor,
     OodPostprocessor,
 )
-
 
 __all__ = [
     "postprocessors_dict",
@@ -551,6 +550,181 @@ class Energy(OodPostprocessor):
         return scores
 
 
+@register_postprocessor("max_logit", postprocessor_input=["logits"])
+class MaxLogit(OodPostprocessor):
+    """
+    Performs MaxLogit postprocessing for out-of-distribution (OOD) detection.
+
+    MaxLogit, introduced in "Scaling Out-of-Distribution Detection for Real-World Settings"
+    (Hendrycks et al., ICML 2022), uses the largest raw logit of a sample as its confidence
+    score. Unlike MSP it skips the softmax normalization, so the magnitude of the logits is
+    preserved instead of being collapsed into a distribution over classes; this makes it
+    noticeably stronger than MSP when the number of classes is large. Higher scores indicate
+    in-distribution samples.
+
+    Attributes:
+        flip_sign (bool): Indicates whether the calculated scores should
+            be inverted during postprocessing.
+    """
+
+    def setup(self, ind_train_data: np.ndarray, **kwargs):
+        """
+        Sets up the threshold for the post-hoc OOD detection method.
+        This includes computing MaxLogit scores for the InD train logits, transforming
+        them, and setting a threshold for further processing.
+
+        Args:
+            ind_train_data (np.ndarray): A numpy array containing the logits of
+                in-distribution training data.
+            **kwargs: Additional keyword arguments that may be required by the
+                method or processing logic.
+
+        """
+        # Need ID scores in Dict format for threshold setup
+        ind_scores = np.max(ind_train_data, axis=1)
+        ind_scores = self.flip_sign_fn(ind_scores)
+        self.set_threshold(ind_scores)
+
+    def postprocess(self, test_data: np.ndarray, **kwargs) -> np.ndarray:
+        """
+        Post-processes the given test data array and computes MaxLogit confidence scores.
+
+        This method performs post-processing operations on the provided test data,
+        including conversion from PyTorch Tensor to NumPy array (if applicable) and
+        taking the maximum logit of each sample.
+
+        Args:
+            test_data (np.ndarray): Input array containing test logits. If the input
+                is of type `Tensor`, it will be converted to a NumPy array.
+            **kwargs: Additional parameters that may be passed but are not utilized
+                explicitly in this method.
+
+        Returns:
+            np.ndarray: The computed MaxLogit scores after applying the scoring function.
+        """
+        assert self._setup_flag, "setup() must be called before postprocess()"
+        if isinstance(test_data, Tensor):
+            test_data = test_data.cpu().numpy()
+        scores = np.max(test_data, axis=1)
+        scores = self.flip_sign_fn(scores)
+        return scores
+
+
+@register_postprocessor("joint_energy", postprocessor_input=["logits"])
+class JointEnergy(OodPostprocessor):
+    """
+    Performs JointEnergy postprocessing for out-of-distribution (OOD) detection.
+
+    JointEnergy, introduced in "Can multi-label classification networks know what they don't
+    know?" (Wang et al., NeurIPS 2021), treats every logit as an independent label-wise binary
+    problem instead of assuming a single softmax distribution over mutually exclusive classes.
+    The free energy of label `i` is `log(1 + exp(logit_i))`, and the per-sample score aggregates
+    these label-wise energies. Higher scores indicate in-distribution samples. Implementation
+    follows the official repository https://github.com/deeplearning-wisc/multi-label-ood.
+
+    Attributes:
+        aggregation (str): How the label-wise energies are aggregated into a single score.
+            One of "sum" (the JointEnergy score of the paper), "max" or "topk".
+        top_k (int): Number of largest label-wise energies summed when `aggregation` is "topk".
+    """
+
+    _VALID_AGGREGATIONS = ("sum", "max", "topk")
+
+    def __init__(
+        self,
+        flip_sign: bool,
+        aggregation: str = "sum",
+        top_k: int = 1,
+        cfg: DictConfig = None,
+    ):
+        """
+        Args:
+            flip_sign (bool): A flag indicating whether the score should be multiplied by -1.
+            aggregation (str): Aggregation applied to the label-wise energies, one of "sum",
+                "max" or "topk". Defaults to "sum", which is the JointEnergy score of the paper;
+                the other two correspond to the `--method` ablations of the official repository.
+            top_k (int): Number of largest label-wise energies to sum when `aggregation` is
+                "topk". Ignored otherwise. Defaults to 1.
+            cfg (DictConfig, optional): An optional configuration object. Defaults to None.
+
+        Raises:
+            ValueError: If `aggregation` is not one of the supported values, or if `top_k` is
+                not a positive integer while `aggregation` is "topk".
+        """
+        super().__init__(flip_sign, cfg)
+        if aggregation not in self._VALID_AGGREGATIONS:
+            raise ValueError(
+                f"Invalid aggregation {aggregation}. Choose one of {self._VALID_AGGREGATIONS}."
+            )
+        if aggregation == "topk" and top_k < 1:
+            raise ValueError(f"top_k must be a positive integer, got {top_k}.")
+        self.aggregation = aggregation
+        self.top_k = top_k
+
+    def _joint_energy(self, data: np.ndarray) -> np.ndarray:
+        """
+        Computes the aggregated label-wise free energies of the given logits.
+
+        Args:
+            data (np.ndarray): Array of logits of shape (n_samples, n_classes).
+
+        Returns:
+            np.ndarray: The aggregated scores, of shape (n_samples,).
+        """
+        # np.logaddexp(0, x) is a numerically stable log(1 + exp(x))
+        label_energies = np.logaddexp(0.0, data)
+        if self.aggregation == "max":
+            return np.max(label_energies, axis=1)
+        if self.aggregation == "topk":
+            # Fewer classes than requested: fall back to summing all of them
+            k = min(self.top_k, label_energies.shape[1])
+            top_energies = np.partition(label_energies, -k, axis=1)[:, -k:]
+            return np.sum(top_energies, axis=1)
+        return np.sum(label_energies, axis=1)
+
+    def setup(self, ind_train_data: np.ndarray, **kwargs):
+        """
+        Sets up the threshold for the post-hoc OOD detection method.
+        This includes computing JointEnergy scores for the InD train logits, transforming
+        them, and setting a threshold for further processing.
+
+        Args:
+            ind_train_data (np.ndarray): A numpy array containing the logits of
+                in-distribution training data.
+            **kwargs: Additional keyword arguments that may be required by the
+                method or processing logic.
+
+        """
+        # Need ID scores in Dict format for threshold setup
+        ind_scores = self._joint_energy(ind_train_data)
+        ind_scores = self.flip_sign_fn(ind_scores)
+        self.set_threshold(ind_scores)
+
+    def postprocess(self, test_data: np.ndarray, **kwargs) -> np.ndarray:
+        """
+        Post-processes the given test data array and computes JointEnergy confidence scores.
+
+        This method performs post-processing operations on the provided test data,
+        including conversion from PyTorch Tensor to NumPy array (if applicable) and
+        aggregating the label-wise free energies of each sample.
+
+        Args:
+            test_data (np.ndarray): Input array containing test logits. If the input
+                is of type `Tensor`, it will be converted to a NumPy array.
+            **kwargs: Additional parameters that may be passed but are not utilized
+                explicitly in this method.
+
+        Returns:
+            np.ndarray: The computed JointEnergy scores after applying the scoring function.
+        """
+        assert self._setup_flag, "setup() must be called before postprocess()"
+        if isinstance(test_data, Tensor):
+            test_data = test_data.cpu().numpy()
+        scores = self._joint_energy(test_data)
+        scores = self.flip_sign_fn(scores)
+        return scores
+
+
 @register_postprocessor("msp", postprocessor_input=["logits"])
 class MSP(OodPostprocessor):
     """
@@ -563,7 +737,26 @@ class MSP(OodPostprocessor):
     Attributes:
         flip_sign (bool): Indicates whether the calculated scores should
             be inverted during postprocessing.
+        use_sigmoid (bool): Indicates whether sigmoid should be used instead of softmax to
+            compute per-class probabilities.
     """
+
+    def __init__(self, flip_sign: bool, use_sigmoid: bool = False, cfg: DictConfig = None):
+        """
+        Args:
+            flip_sign (bool): A flag indicating whether the score should be multiplied by -1.
+            use_sigmoid (bool): If True, computes per-class probabilities with sigmoid instead
+                of softmax. Use this for logits coming from open-vocabulary detectors (e.g.
+                Grounding DINO, OWL-ViT), whose class scores are independent per-class
+                probabilities rather than a single softmax distribution over a fixed, closed set
+                of classes. Keep the default of False (softmax) for closed-vocabulary models.
+            cfg (DictConfig, optional): An optional configuration object. Defaults to None.
+        """
+        super().__init__(flip_sign, cfg)
+        self.use_sigmoid = use_sigmoid
+
+    def _class_probs(self, data: np.ndarray) -> np.ndarray:
+        return expit(data) if self.use_sigmoid else softmax(data, axis=1)
 
     def setup(self, ind_train_data: np.ndarray, **kwargs):
         """
@@ -579,7 +772,7 @@ class MSP(OodPostprocessor):
 
         """
         # Need ID scores in Dict format for threshold setup
-        ind_scores = np.max(softmax(ind_train_data, axis=1), axis=1)
+        ind_scores = np.max(self._class_probs(ind_train_data), axis=1)
         ind_scores = self.flip_sign_fn(ind_scores)
         self.set_threshold(ind_scores)
 
@@ -589,7 +782,7 @@ class MSP(OodPostprocessor):
 
         This method performs post-processing operations on the provided test data,
         including conversion from PyTorch Tensor to NumPy array (if applicable) and
-        computing the maximum softmax probability for each sample.
+        computing the maximum softmax (or sigmoid) probability for each sample.
 
         Args:
             test_data (np.ndarray): Input array containing test logits. If the input
@@ -603,7 +796,7 @@ class MSP(OodPostprocessor):
         assert self._setup_flag, "setup() must be called before postprocess()"
         if isinstance(test_data, Tensor):
             test_data = test_data.cpu().numpy()
-        scores = np.max(softmax(test_data, axis=1), axis=1)
+        scores = np.max(self._class_probs(test_data), axis=1)
         scores = self.flip_sign_fn(scores)
         return scores
 
@@ -622,6 +815,8 @@ class GEN(OodPostprocessor):
         gamma (float): The entropy regularization parameter that controls the level of
             entropy applied to scores.
         num_classes (int): The number of classes in the classification task.
+        use_sigmoid (bool): Indicates whether sigmoid should be used instead of softmax to
+            compute per-class probabilities.
     """
 
     def __init__(
@@ -629,6 +824,7 @@ class GEN(OodPostprocessor):
         flip_sign: bool,
         gamma: float,
         num_classes: int,
+        use_sigmoid: bool = False,
         cfg: DictConfig = None,
     ):
         """
@@ -640,31 +836,40 @@ class GEN(OodPostprocessor):
             flip_sign (bool): Whether the score inversion is applied.
             gamma (float): The gamma parameter for the method.
             num_classes (int): Number of classes being used.
+            use_sigmoid (bool): If True, computes per-class probabilities with sigmoid instead
+                of softmax. Use this for logits coming from open-vocabulary detectors (e.g.
+                Grounding DINO, OWL-ViT), whose class scores are independent per-class
+                probabilities rather than a single softmax distribution over a fixed, closed set
+                of classes. Keep the default of False (softmax) for closed-vocabulary models.
             setup_flag (bool): A flag to determine if additional setup is required.
             cfg (DictConfig): Configuration dictionary for additional settings.
         """
         super().__init__(flip_sign, cfg)
         self.gamma = gamma
         self.num_classes = num_classes
+        self.use_sigmoid = use_sigmoid
+
+    def _class_probs(self, data: np.ndarray) -> np.ndarray:
+        return expit(data) if self.use_sigmoid else softmax(data, axis=1)
 
     def setup(self, ind_train_data: np.ndarray, **kwargs):
         """
         Sets up the necessary components to compute thresholds for confidence scores.
 
         The function processes the provided independent training data by applying the softmax
-        operation along a specified axis. The resultant softmax values are then used to calculate
-        generalized entropy scores, which are associated to the current method name. These scores
-        are further transformed using the inversion function and finally used to set the
-        threshold for the method.
+        (or sigmoid) operation along a specified axis. The resultant class probabilities are then
+        used to calculate generalized entropy scores, which are associated to the current method
+        name. These scores are further transformed using the inversion function and finally used
+        to set the threshold for the method.
 
         Args:
             ind_train_data (np.ndarray): Independent training data to be used for calculating
                 identification scores and thresholds.
             **kwargs: Additional keyword arguments for configuration or optional parameters.
         """
-        softmax_ind_train = softmax(ind_train_data, axis=1)
+        class_probs_ind_train = self._class_probs(ind_train_data)
         # Need ID scores in Dict format for threshold setup
-        ind_scores = generalized_entropy(softmax_ind_train, self.gamma, self.num_classes)
+        ind_scores = generalized_entropy(class_probs_ind_train, self.gamma, self.num_classes)
         ind_scores = self.flip_sign_fn(ind_scores)
         self.set_threshold(ind_scores)
 
@@ -685,8 +890,8 @@ class GEN(OodPostprocessor):
         assert self._setup_flag, "setup() must be called before postprocess()"
         if isinstance(test_data, Tensor):
             test_data = test_data.cpu().numpy()
-        softmax_test = softmax(test_data, axis=1)
-        scores = generalized_entropy(softmax_test, self.gamma, self.num_classes)
+        class_probs_test = self._class_probs(test_data)
+        scores = generalized_entropy(class_probs_test, self.gamma, self.num_classes)
         scores = self.flip_sign_fn(scores)
         return scores
 

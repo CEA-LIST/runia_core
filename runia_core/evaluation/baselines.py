@@ -8,7 +8,7 @@
 #    Fabio Arnez, probabilistic adaptation
 #    Daniel Montoya
 from omegaconf import DictConfig
-from scipy.special import softmax
+from scipy.special import softmax, expit
 from typing import Tuple, Dict, List, Union
 import numpy as np
 
@@ -20,6 +20,8 @@ from runia_core.inference.postprocessors import (
     ViM,
     MSP,
     Energy,
+    JointEnergy,
+    MaxLogit,
     Mahalanobis,
     KNN,
     DDU,
@@ -258,6 +260,7 @@ def get_gen_score_from_logits(
     ood_baselines_dict: Dict[str, np.ndarray],
     gamma: float,
     gen_m: int,
+    use_sigmoid: bool = False,
 ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """Compute generalized-entropy (GEN) score from logits.
 
@@ -274,6 +277,10 @@ def get_gen_score_from_logits(
             baseline scores (keyed by "{ood_name} gen").
         gamma: Exponent parameter for generalized entropy.
         gen_m: Number of top probabilities (M) to consider per sample.
+        use_sigmoid: If True, computes per-class probabilities with sigmoid instead of
+            softmax. Use this when the logits come from an open-vocabulary detector (e.g.
+            Grounding DINO, OWL-ViT), whose class scores are independent per-class
+            probabilities. Keep the default of False (softmax) for closed-vocabulary models.
 
     Returns:
         Tuple of (updated ind_data_dict, updated ood_baselines_dict) where the
@@ -285,6 +292,7 @@ def get_gen_score_from_logits(
         flip_sign=False,
         gamma=gamma,
         num_classes=gen_m,
+        use_sigmoid=use_sigmoid,
     )
     postp.setup(
         ind_train_data=ind_data_dict["train logits"],
@@ -357,6 +365,7 @@ def get_msp_score_from_logits(
     ood_data_dict: Dict[str, np.ndarray],
     ood_names: List[str],
     ood_baselines_dict: Dict[str, np.ndarray],
+    use_sigmoid: bool = False,
 ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """Compute maximum softmax probability (MSP) baseline score.
 
@@ -370,6 +379,10 @@ def get_msp_score_from_logits(
         ood_names: List of OoD dataset names present in `ood_data_dict`.
         ood_baselines_dict: Dictionary that will be populated with computed OoD
             baseline scores (keyed by "{ood_name} msp").
+        use_sigmoid: If True, computes per-class probabilities with sigmoid instead of
+            softmax. Use this when the logits come from an open-vocabulary detector (e.g.
+            Grounding DINO, OWL-ViT), whose class scores are independent per-class
+            probabilities. Keep the default of False (softmax) for closed-vocabulary models.
 
     Returns:
         Tuple of (updated ind_data_dict, updated ood_baselines_dict) where the
@@ -379,6 +392,7 @@ def get_msp_score_from_logits(
     print("Calculating msp score")
     postp = MSP(
         flip_sign=False,
+        use_sigmoid=use_sigmoid,
     )
     postp.setup(
         ind_train_data=ind_data_dict["train logits"],
@@ -397,6 +411,7 @@ def get_raw_score_from_logits(
     ood_data_dict: Dict[str, np.ndarray],
     ood_names: List[str],
     ood_baselines_dict: Dict[str, np.ndarray],
+    use_sigmoid: bool = False,
 ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """Compute raw predictions without postprocessing for OOD detection.
 
@@ -409,6 +424,10 @@ def get_raw_score_from_logits(
         ood_names: List of OoD dataset names present in `ood_data_dict`.
         ood_baselines_dict: Dictionary that will be populated with computed OoD
             baseline scores (keyed by "{ood_name} msp").
+        use_sigmoid: If True, computes per-class probabilities with sigmoid instead of
+            softmax. Use this when the logits come from an open-vocabulary detector (e.g.
+            Grounding DINO, OWL-ViT), whose class scores are independent per-class
+            probabilities. Keep the default of False (softmax) for closed-vocabulary models.
 
     Returns:
         Tuple of (updated ind_data_dict, updated ood_baselines_dict) where the
@@ -416,10 +435,11 @@ def get_raw_score_from_logits(
         receives entries for each OoD dataset under the key "{ood_name} raw".
     """
     print("Calculating raw score")
-    ind_valid_msp = np.max(softmax(ind_data_dict["valid logits"], axis=1), axis=1)
+    class_probs_fn = expit if use_sigmoid else lambda logits: softmax(logits, axis=1)
+    ind_valid_msp = np.max(class_probs_fn(ind_data_dict["valid logits"]), axis=1)
     ind_data_dict["raw"] = ind_valid_msp
     for ood_name in ood_names:
-        ood_msp = np.max(softmax(ood_data_dict[f"{ood_name} logits"], axis=1), axis=1)
+        ood_msp = np.max(class_probs_fn(ood_data_dict[f"{ood_name} logits"]), axis=1)
         ood_baselines_dict[f"{ood_name} raw"] = ood_msp
 
     return ind_data_dict, ood_baselines_dict
@@ -459,6 +479,98 @@ def get_energy_score_from_logits(
     ind_data_dict["energy"] = postp.postprocess(test_data=ind_data_dict["valid logits"])
     for ood_name in ood_names:
         ood_baselines_dict[f"{ood_name} energy"] = postp.postprocess(
+            test_data=ood_data_dict[f"{ood_name} logits"]
+        )
+
+    return ind_data_dict, ood_baselines_dict
+
+
+def get_max_logit_score_from_logits(
+    ind_data_dict: Dict[str, np.ndarray],
+    ood_data_dict: Dict[str, np.ndarray],
+    ood_names: List[str],
+    ood_baselines_dict: Dict[str, np.ndarray],
+) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+    """Compute the MaxLogit baseline score from logits.
+
+    MaxLogit takes the largest raw logit of each sample as its confidence score, skipping the
+    softmax normalization applied by msp. The function populates the InD and OoD dictionaries
+    with the resulting scores.
+
+    Args:
+        ind_data_dict: Dictionary with InD data arrays. Expected keys "train logits" and
+            "valid logits".
+        ood_data_dict: Dictionary with OoD data arrays. Each OoD dataset should
+            provide a "{ood_name} logits" entry.
+        ood_names: List of OoD dataset names present in `ood_data_dict`.
+        ood_baselines_dict: Dictionary that will be populated with computed OoD
+            baseline scores (keyed by "{ood_name} max_logit").
+
+    Returns:
+        Tuple of (updated ind_data_dict, updated ood_baselines_dict) where the
+        InD dictionary receives a "max_logit" entry and the OoD baselines dictionary
+        receives entries for each OoD dataset under the key "{ood_name} max_logit".
+    """
+    print("Calculating max_logit score")
+    postp = MaxLogit(
+        flip_sign=False,
+    )
+    postp.setup(
+        ind_train_data=ind_data_dict["train logits"],
+    )
+    ind_data_dict["max_logit"] = postp.postprocess(test_data=ind_data_dict["valid logits"])
+    for ood_name in ood_names:
+        ood_baselines_dict[f"{ood_name} max_logit"] = postp.postprocess(
+            test_data=ood_data_dict[f"{ood_name} logits"]
+        )
+
+    return ind_data_dict, ood_baselines_dict
+
+
+def get_joint_energy_score_from_logits(
+    ind_data_dict: Dict[str, np.ndarray],
+    ood_data_dict: Dict[str, np.ndarray],
+    ood_names: List[str],
+    ood_baselines_dict: Dict[str, np.ndarray],
+    aggregation: str = "sum",
+    top_k: int = 1,
+) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+    """Compute the JointEnergy baseline score from logits.
+
+    JointEnergy treats each logit as an independent label-wise binary problem, computes the
+    label-wise free energy log(1 + exp(logit)) and aggregates them per sample. The function
+    populates the InD and OoD dictionaries with the resulting scores.
+
+    Args:
+        ind_data_dict: Dictionary with InD data arrays. Expected keys "train logits" and
+            "valid logits".
+        ood_data_dict: Dictionary with OoD data arrays. Each OoD dataset should
+            provide a "{ood_name} logits" entry.
+        ood_names: List of OoD dataset names present in `ood_data_dict`.
+        ood_baselines_dict: Dictionary that will be populated with computed OoD
+            baseline scores (keyed by "{ood_name} joint_energy").
+        aggregation: Aggregation applied to the label-wise energies, one of "sum", "max" or
+            "topk". Defaults to "sum", which is the JointEnergy score of the paper.
+        top_k: Number of largest label-wise energies to sum when `aggregation` is "topk".
+            Ignored otherwise.
+
+    Returns:
+        Tuple of (updated ind_data_dict, updated ood_baselines_dict) where the
+        InD dictionary receives a "joint_energy" entry and the OoD baselines dictionary
+        receives entries for each OoD dataset under the key "{ood_name} joint_energy".
+    """
+    print("Calculating joint_energy score")
+    postp = JointEnergy(
+        flip_sign=False,
+        aggregation=aggregation,
+        top_k=top_k,
+    )
+    postp.setup(
+        ind_train_data=ind_data_dict["train logits"],
+    )
+    ind_data_dict["joint_energy"] = postp.postprocess(test_data=ind_data_dict["valid logits"])
+    for ood_name in ood_names:
+        ood_baselines_dict[f"{ood_name} joint_energy"] = postp.postprocess(
             test_data=ood_data_dict[f"{ood_name} logits"]
         )
 
@@ -717,6 +829,7 @@ def calculate_all_baselines(
     fc_params: Union[Dict[str, np.ndarray], None],
     cfg: DictConfig,
     num_classes: int,
+    use_sigmoid: bool = False,
 ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """Compute a set of selected baseline OOD scores from available precomputed data.
 
@@ -734,8 +847,16 @@ def calculate_all_baselines(
             required by some baselines (weight and bias).
         cfg: Configuration object expected to contain baseline-specific hyperparams
             such as `k_neighbors`, `ash_percentile`, `gen_gamma`, `react_percentile`,
-            and `dice_percentile`, and list `ood_datasets`.
+            and `dice_percentile`, and list `ood_datasets`. Optionally it may contain
+            `joint_energy_aggregation` ("sum", "max" or "topk", default "sum") and
+            `joint_energy_k` (default 1) for the joint_energy baseline.
         num_classes: Number of classes relevant for methods that require it.
+        use_sigmoid: If True, the logit-based baselines that rely on softmax ('msp', 'raw',
+            'gen') compute per-class probabilities with sigmoid instead. Use this when the
+            logits come from an open-vocabulary detector (e.g. Grounding DINO, OWL-ViT), whose
+            class scores are independent per-class probabilities. Keep the default of False
+            (softmax) for closed-vocabulary models. Baselines that don't use softmax are
+            unaffected by this flag.
 
     Returns:
         A tuple (ind_data_dict, ood_data_dict, ood_baselines_scores_dict) where
@@ -761,6 +882,7 @@ def calculate_all_baselines(
             ood_data_dict=ood_data_dict,
             ood_names=cfg.ood_datasets,
             ood_baselines_dict=ood_baselines_scores_dict,
+            use_sigmoid=use_sigmoid,
         )
     if "raw" in baselines_names:
         ind_data_dict, ood_baselines_scores_dict = get_raw_score_from_logits(
@@ -768,6 +890,7 @@ def calculate_all_baselines(
             ood_data_dict=ood_data_dict,
             ood_names=cfg.ood_datasets,
             ood_baselines_dict=ood_baselines_scores_dict,
+            use_sigmoid=use_sigmoid,
         )
     if "knn" in baselines_names:
         ind_data_dict, ood_baselines_scores_dict = get_knn_score_from_features(
@@ -783,6 +906,22 @@ def calculate_all_baselines(
             ood_data_dict=ood_data_dict,
             ood_names=cfg.ood_datasets,
             ood_baselines_dict=ood_baselines_scores_dict,
+        )
+    if "max_logit" in baselines_names:
+        ind_data_dict, ood_baselines_scores_dict = get_max_logit_score_from_logits(
+            ind_data_dict=ind_data_dict,
+            ood_data_dict=ood_data_dict,
+            ood_names=cfg.ood_datasets,
+            ood_baselines_dict=ood_baselines_scores_dict,
+        )
+    if "joint_energy" in baselines_names:
+        ind_data_dict, ood_baselines_scores_dict = get_joint_energy_score_from_logits(
+            ind_data_dict=ind_data_dict,
+            ood_data_dict=ood_data_dict,
+            ood_names=cfg.ood_datasets,
+            ood_baselines_dict=ood_baselines_scores_dict,
+            aggregation=cfg.get("joint_energy_aggregation", "sum"),
+            top_k=cfg.get("joint_energy_k", 1),
         )
     if "ash" in baselines_names:
         ind_data_dict, ood_baselines_scores_dict = get_ash_score_from_features(
@@ -801,6 +940,7 @@ def calculate_all_baselines(
             ood_baselines_dict=ood_baselines_scores_dict,
             gamma=cfg.gen_gamma,
             gen_m=num_classes,
+            use_sigmoid=use_sigmoid,
         )
     if "react" in baselines_names:
         ind_data_dict, ood_baselines_scores_dict = get_react_score_from_features(
@@ -874,6 +1014,16 @@ baseline_name_dict = {
         "plot_title": "Predictive energy score distribution",
         "x_axis": "Predictive energy score",
         "plot_name": "pred_energy",
+    },
+    "max_logit": {
+        "plot_title": "Predictive MaxLogit score distribution",
+        "x_axis": "Predictive MaxLogit score",
+        "plot_name": "pred_max_logit",
+    },
+    "joint_energy": {
+        "plot_title": "Predictive JointEnergy score distribution",
+        "x_axis": "Predictive JointEnergy score",
+        "plot_name": "pred_joint_energy",
     },
     "mdist": {
         "plot_title": "Mahalanobis Distance distribution",

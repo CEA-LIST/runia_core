@@ -601,6 +601,7 @@ def get_gtu_uu_metrics(
     methods_names: List[str],
     metric_2007: bool,
     min_conf_score: Optional[float] = None,
+    use_sigmoid: Union[bool, Dict[str, bool]] = False,
 ) -> Dict[str, Dict[str, Dict[str, np.ndarray]]]:
     """
     Get labels, boxes, softmax scores and method scores for GTU (Ground Truth Unknown) and UU (Unknown Unknown)
@@ -620,6 +621,12 @@ def get_gtu_uu_metrics(
         metric_2007: Boolean flag to indicate whether to use metric 2007 or not for evaluation
         min_conf_score: Optional float with a minimum confidence score threshold for a box to be
             considered in evaluation. If None, no threshold is applied
+        use_sigmoid: Whether to compute detection confidence with sigmoid instead of softmax when
+            extracting labels and scores from the OoD logits. Open-vocabulary detectors (e.g.
+            Grounding DINO, OWL-ViT) score each class independently and should use sigmoid;
+            closed-vocabulary detectors should keep the default softmax. Pass a single bool to
+            apply the same behavior to every OOD dataset, or a dict keyed by OOD dataset name to
+            set it per dataset. Defaults to False.
 
     Returns:
         Dict: Dictionary with keys as OoD dataset names and values as dictionaries with keys as method names and
@@ -640,6 +647,11 @@ def get_gtu_uu_metrics(
     for ood_dataset_name in ood_datasets_names:
         ood_scores[ood_dataset_name] = {}
         results[ood_dataset_name] = {}
+        dataset_use_sigmoid = (
+            use_sigmoid.get(ood_dataset_name, False)
+            if isinstance(use_sigmoid, dict)
+            else use_sigmoid
+        )
         for method in methods_names:
             ood_scores[ood_dataset_name][method] = {}
             results[ood_dataset_name][method] = {}
@@ -654,6 +666,7 @@ def get_gtu_uu_metrics(
                 test_gt_annotations_path=ood_annotations_paths[ood_dataset_name],
                 metric_2007=metric_2007,
                 evaluating_ood=True,
+                use_sigmoid=dataset_use_sigmoid,
                 min_conf_score=min_conf_score,
             )
             _, results_gtu = get_auroc_results(
@@ -681,6 +694,7 @@ def get_gtu_coverage_metrics(
     confidence_thresholds: Union[float, List[float], np.ndarray],
     using_subset: Optional[List[Union[str, int]]] = False,
     ovthresh: float = 0.5,
+    use_sigmoid: Union[bool, Dict[str, bool]] = False,
 ) -> Dict[str, Dict[float, float]]:
     """
     Computes the C_GTU(t*) ground-truth-unknown coverage curve for each OOD dataset.
@@ -701,6 +715,11 @@ def get_gtu_coverage_metrics(
             False (use all images).
         ovthresh: Minimum IoU for a base detector box to be considered as covering a
             ground-truth unknown. Defaults to 0.5.
+        use_sigmoid: Whether to compute detection confidence with sigmoid instead of softmax.
+            Open-vocabulary detectors (e.g. Grounding DINO, OWL-ViT) score each class
+            independently and should use sigmoid; closed-vocabulary detectors should keep the
+            default softmax. Pass a single bool to apply the same behavior to every OOD dataset,
+            or a dict keyed by OOD dataset name to set it per dataset. Defaults to False.
 
     Returns:
         Dict[str, Dict[float, float]]: Dictionary with keys as OoD dataset names and values as
@@ -708,12 +727,18 @@ def get_gtu_coverage_metrics(
     """
     results = {}
     for ood_dataset_name in ood_datasets_names:
+        dataset_use_sigmoid = (
+            use_sigmoid.get(ood_dataset_name, False)
+            if isinstance(use_sigmoid, dict)
+            else use_sigmoid
+        )
         results[ood_dataset_name] = get_gtu_coverage(
             predictions_dict=ood_data_dict[ood_dataset_name],
             test_gt_annotations_path=ood_annotations_paths[ood_dataset_name],
             confidence_thresholds=confidence_thresholds,
             using_subset=using_subset,
             ovthresh=ovthresh,
+            use_sigmoid=dataset_use_sigmoid,
         )
     return results
 
