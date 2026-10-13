@@ -4,7 +4,6 @@
 # SPDX-License-Identifier: EPL-2.0
 #
 # Contributors
-#    Based on https://github.com/fregu856/deeplabv3
 #    Fabio Arnez, probabilistic adaptation
 #    Daniel Montoya
 import warnings
