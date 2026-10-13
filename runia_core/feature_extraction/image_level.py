@@ -1,7 +1,7 @@
 # (c) 2023, CEA LIST
 #
 # All rights reserved.
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: EPL-2.0
 #
 # Contributors
 #    Based on https://github.com/fregu856/deeplabv3
