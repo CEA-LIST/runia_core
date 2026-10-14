@@ -20,8 +20,11 @@ __all__ = [
     "plot_two_osod_datasets_metrics",
     "plot_two_osod_datasets_per_metric",
     "get_boxes_gtu_and_uu_ood_dataset",
+    "get_boxes_id_scores",
     "get_gtu_coverage",
 ]
+
+ID_POSITIVE_SETS = ("all", "localized", "true_positive")
 
 
 class COCOParser:
@@ -1216,6 +1219,108 @@ def get_boxes_gtu_and_uu_ood_dataset(
         using_subset=using_subset,
     )
     return method_scores_gtu, method_scores_uu
+
+
+def get_boxes_id_scores(
+    predictions_dict: Dict,
+    method_name: str,
+    id_gt_annotations_path: str,
+    positive_set: str = "true_positive",
+    using_subset: Optional[List[Union[str, int]]] = False,
+    min_conf_score: Optional[float] = None,
+    use_sigmoid: bool = False,
+    ovthresh: float = 0.5,
+) -> np.ndarray:
+    """
+    Returns the method scores of the InD boxes used as the positive class of OOD metrics.
+
+    Base detector boxes on InD images are not all correct InD detections: at a low confidence
+    threshold most of them are background, duplicate or mislocalized boxes. Comparing those boxes
+    against boxes on real OOD objects mixes misprediction detection with semantic OOD detection.
+    `positive_set` selects which InD boxes are kept:
+
+    - "all": every InD box (legacy behaviour).
+    - "localized": boxes with IoU >= `ovthresh` against any InD ground-truth box, regardless of
+      the predicted class. Duplicates on the same object are all kept.
+    - "true_positive": correct InD detections in the PASCAL VOC sense. Boxes are visited by
+      decreasing detection confidence, and a box is a true positive if its predicted class
+      matches an unmatched ground-truth box of the same class with IoU >= `ovthresh`. Each
+      ground-truth box is matched at most once, so duplicates are excluded. The predicted class
+      index `i` is assumed to be the `i`-th category of the annotations file, as in
+      `OpenSetEvaluator`.
+
+    Args:
+        predictions_dict: Dictionary with the InD predictions for each image, in the format
+            {image_id: {"boxes": ..., "logits": ..., method_name: ...}}. Images without an entry
+            for `method_name` (e.g. left out by box subsetting) are skipped.
+        method_name: Name of the method whose scores are returned.
+        id_gt_annotations_path: Path to the InD ground-truth annotations file (COCO format).
+        positive_set: One of "all", "localized" or "true_positive". Defaults to "true_positive".
+        using_subset: Optional subset of image ids to restrict the evaluation to. Defaults to
+            False (use all images).
+        min_conf_score: Optional minimum detection confidence for a box to be considered, applied
+            the same way as for the OOD boxes. If None, no threshold is applied.
+        use_sigmoid: If True, computes detection confidence and predicted class with sigmoid
+            instead of softmax. Must match the setting used for the OOD boxes.
+        ovthresh: Minimum IoU against an InD ground-truth box. Defaults to 0.5.
+
+    Returns:
+        np.ndarray: The method scores of the selected InD boxes.
+    """
+    if positive_set not in ID_POSITIVE_SETS:
+        raise ValueError(f"Invalid positive_set {positive_set}. Choose one of {ID_POSITIVE_SETS}.")
+    gt_boxes_per_image = {}
+    gt_classes_per_image = {}
+    if positive_set != "all":
+        id_annotations = COCOParser(id_gt_annotations_path)
+        cat_index = {cat_id: i for i, cat_id in enumerate(id_annotations.cat_dict.keys())}
+        for imagename, anns in id_annotations.annIm_dict.items():
+            gt_boxes_per_image[str(imagename)] = np.array(
+                [convert_xywh_to_xyxy(ann["bbox"]) for ann in anns]
+            ).reshape(-1, 4)
+            gt_classes_per_image[str(imagename)] = np.array(
+                [cat_index[ann["category_id"]] for ann in anns]
+            )
+
+    selected_scores = []
+    for im_id, im_pred in predictions_dict.items():
+        if using_subset and im_id not in using_subset:
+            continue
+        if len(im_pred["boxes"]) == 0 or method_name not in im_pred:
+            continue
+        labels, confidence = get_labels_and_scores_from_logits(
+            im_pred["logits"], use_sigmoid=use_sigmoid
+        )
+        boxes = get_boxes_from_precalculated(im_pred["boxes"])
+        method_scores = np.array(im_pred[method_name]).reshape(-1)
+        if min_conf_score is not None:
+            labels, confidence, boxes, method_scores = _filter_predictions_by_conf_score(
+                labels, confidence, boxes, method_scores, min_conf_score
+            )
+        if len(labels) == 0:
+            continue
+        if positive_set == "all":
+            selected_scores.extend(method_scores)
+            continue
+        gt_boxes = gt_boxes_per_image.get(str(im_id))
+        if gt_boxes is None or gt_boxes.size == 0:
+            continue
+        if positive_set == "localized":
+            keep = [_compute_overlaps(gt_boxes, box).max() >= ovthresh for box in boxes]
+            selected_scores.extend(method_scores[np.array(keep, dtype=bool)])
+            continue
+        gt_classes = gt_classes_per_image[str(im_id)]
+        matched = np.zeros(gt_boxes.shape[0], dtype=bool)
+        for i in np.argsort(-confidence, kind="stable"):
+            same_class = np.where(gt_classes == labels[i])[0]
+            if same_class.size == 0:
+                continue
+            overlaps = _compute_overlaps(gt_boxes[same_class], boxes[i])
+            best = int(np.argmax(overlaps))
+            if overlaps[best] >= ovthresh and not matched[same_class[best]]:
+                matched[same_class[best]] = True
+                selected_scores.append(method_scores[i])
+    return np.array(selected_scores)
 
 
 def _filter_predictions_by_conf_score(

@@ -9,6 +9,7 @@ dist/
 .mypy_cache/
 .ruff_cache/
 .github/
+*ubyte*
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md

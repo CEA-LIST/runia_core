@@ -14,12 +14,15 @@ import mlflow
 import matplotlib.pyplot as plt
 import pandas as pd
 from omegaconf import DictConfig
-from sklearn.metrics import auc
-import torchmetrics.functional as tmf
+from sklearn.metrics import auc, roc_auc_score, roc_curve, precision_recall_curve
 import seaborn as sns
 from collections import defaultdict
 
-from runia_core.evaluation.open_set import get_boxes_gtu_and_uu_ood_dataset, get_gtu_coverage
+from runia_core.evaluation.open_set import (
+    get_boxes_gtu_and_uu_ood_dataset,
+    get_boxes_id_scores,
+    get_gtu_coverage,
+)
 from runia_core.inference.postprocessors import postprocessors_dict
 
 __all__ = [
@@ -45,7 +48,9 @@ def get_auroc_results(
     """
     Calculates the metrics relevant for OoD detection: AUROC, FPR, AUPR, TPR, precision, recall,
     and classification thresholds. Can optionally format results for mlflow logging (no @ allowed).
-    Automatically inverts labels if AUROC < 0.5.
+    InD is the positive class, so higher scores must mean more in-distribution. Labels are never
+    inverted: an AUROC below 0.5 is reported as is. Metrics are computed with scikit-learn directly
+    on the raw scores, so scores of any range (e.g. unbounded distances) are ranked as given.
 
     Args:
         detect_exp_name: Name of the current experiment. This will be of the name of the row
@@ -59,31 +64,26 @@ def get_auroc_results(
         (pd.Dataframe): Results in a pandas dataframe format and optionally a dictionary with
             results for mlflow
     """
-    labels_ind_test = np.ones((ind_samples_scores.shape[0], 1))  # positive class
-    labels_ood_test = np.zeros((ood_samples_scores.shape[0], 1))  # negative class
+    ind_samples_scores = np.asarray(ind_samples_scores, dtype=np.float64).reshape(-1)
+    ood_samples_scores = np.asarray(ood_samples_scores, dtype=np.float64).reshape(-1)
+    scores = np.concatenate((ind_samples_scores, ood_samples_scores))
+    # InD is the positive class, OoD the negative class
+    labels = np.concatenate(
+        (np.ones(ind_samples_scores.shape[0]), np.zeros(ood_samples_scores.shape[0]))
+    ).astype("int32")
 
-    ind_samples_scores = np.expand_dims(ind_samples_scores, 1)
-    ood_samples_scores = np.expand_dims(ood_samples_scores, 1)
+    # torchmetrics' binary metrics apply a sigmoid to any score outside [0, 1], which saturates
+    # large-magnitude scores (e.g. Mahalanobis distances) into ties. scikit-learn ranks the raw
+    # scores instead.
+    roc_auc = roc_auc_score(labels, scores)
+    fpr, tpr, roc_thresholds = roc_curve(labels, scores, drop_intermediate=False)
+    fpr_95 = fpr[np.where(tpr >= 0.95)[0][0]]
 
-    scores = np.vstack((ind_samples_scores, ood_samples_scores))
-    labels = np.vstack((labels_ind_test, labels_ood_test))
-    labels = labels.astype("int32")
-
-    roc_auc = tmf.auroc(torch.from_numpy(scores), torch.from_numpy(labels), task="binary")
-
-    fpr, tpr, roc_thresholds = tmf.roc(
-        torch.from_numpy(scores), torch.from_numpy(labels), task="binary"
-    )
-
-    fpr_95 = fpr[torch.where(tpr >= 0.95)[0][0]]
-
-    precision, recall, pr_thresholds = tmf.precision_recall_curve(
-        torch.from_numpy(scores), torch.from_numpy(labels), task="binary"
-    )
-    aupr = auc(recall.numpy(), precision.numpy())
+    precision, recall, pr_thresholds = precision_recall_curve(labels, scores)
+    aupr = auc(recall, precision)
 
     results_table = pd.DataFrame.from_dict(
-        {detect_exp_name: [roc_auc.item(), fpr_95.item(), aupr, fpr.tolist(), tpr.tolist()]},
+        {detect_exp_name: [float(roc_auc), float(fpr_95), aupr, fpr.tolist(), tpr.tolist()]},
         orient="index",
         columns=[
             "auroc",
@@ -602,6 +602,8 @@ def get_gtu_uu_metrics(
     metric_2007: bool,
     min_conf_score: Optional[float] = None,
     use_sigmoid: Union[bool, Dict[str, bool]] = False,
+    id_positive_set: str = "all",
+    ovthresh: float = 0.5,
 ) -> Dict[str, Dict[str, Dict[str, np.ndarray]]]:
     """
     Get labels, boxes, softmax scores and method scores for GTU (Ground Truth Unknown) and UU (Unknown Unknown)
@@ -626,21 +628,33 @@ def get_gtu_uu_metrics(
             Grounding DINO, OWL-ViT) score each class independently and should use sigmoid;
             closed-vocabulary detectors should keep the default softmax. Pass a single bool to
             apply the same behavior to every OOD dataset, or a dict keyed by OOD dataset name to
-            set it per dataset. Defaults to False.
+            set it per dataset. With a dict, the InD boxes use the entry for
+            `ind_dataset_name`. Defaults to False.
+        id_positive_set: Which InD boxes form the positive class, see `get_boxes_id_scores`:
+            "all" (every InD box, the legacy behaviour), "localized" (IoU >= `ovthresh` with an InD
+            ground-truth box) or "true_positive" (correct InD detections, class-aware and
+            one-to-one). Defaults to "all".
+        ovthresh: Minimum IoU for an InD box to match an InD ground-truth box. Defaults to 0.5.
 
     Returns:
         Dict: Dictionary with keys as OoD dataset names and values as dictionaries with keys as method names and
             values as dictionaries with keys 'gtu' and 'uu' and values as the corresponding scores
     """
-    # Get ID scores per method
+    id_use_sigmoid = (
+        use_sigmoid.get(ind_dataset_name, False) if isinstance(use_sigmoid, dict) else use_sigmoid
+    )
+    # Get ID scores per method, with the same confidence filter as the OoD boxes
     id_valid_scores = {}
     for method in methods_names:
-        id_valid_scores[method] = []
-        for im_id, pred_dict in ind_data_dict["valid"].items():
-            if method in pred_dict.keys(): 
-                id_valid_scores[method].extend(pred_dict[method])
-
-        id_valid_scores[method] = np.array([id_valid_scores[method]]).squeeze()
+        id_valid_scores[method] = get_boxes_id_scores(
+            predictions_dict=ind_data_dict["valid"],
+            method_name=method,
+            id_gt_annotations_path=ind_gt_annotations_path,
+            positive_set=id_positive_set,
+            min_conf_score=min_conf_score,
+            use_sigmoid=id_use_sigmoid,
+            ovthresh=ovthresh,
+        )
 
     ood_scores = {}
     results = {}

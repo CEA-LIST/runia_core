@@ -32,6 +32,18 @@ class Test(TestCase):
         self.assertAlmostEqual(0.7484172582626343, results["aupr"].values[0], delta=TOL)
         self.assertAlmostEqual(0.7622030377388, results["auroc"].values[0], delta=TOL)
 
+    def test_auroc_large_magnitude_scores(self):
+        # Scores far outside [0, 1] must be ranked as given, not squashed by a sigmoid into ties
+        test_ind = -1000.0 + np.arange(10, dtype=float)
+        test_ood = -2000.0 + np.arange(10, dtype=float)
+        results = get_auroc_results("test", test_ind, test_ood, False)
+        self.assertAlmostEqual(1.0, results["auroc"].values[0], delta=TOL)
+        self.assertAlmostEqual(0.0, results["fpr@95"].values[0], delta=TOL)
+
+    def test_auroc_below_chance_not_inverted(self):
+        results = get_auroc_results("test", np.zeros(5), np.ones(5), False)
+        self.assertAlmostEqual(0.0, results["auroc"].values[0], delta=TOL)
+
     def test_evaluate_postprocessors(self):
         np.random.seed(SEED)
         valid_ind = 0.5 + np.random.randn(TEST_SET_SIZE, LATENT_SPACE_DIM)

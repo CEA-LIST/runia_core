@@ -25,6 +25,7 @@ from runia_core.evaluation.open_set import (
     evaluate_open_set_detection_one_method,
     get_overall_open_set_results,
     get_gtu_coverage,
+    get_boxes_id_scores,
     _max_iou_per_gt,
 )
 
@@ -1235,6 +1236,79 @@ class TestGetGtuCoverage(TestCase):
             confidence_thresholds=0.5,
         )
         self.assertAlmostEqual(coverage[0.5], 0.0)
+
+
+class TestGetBoxesIdScores(TestCase):
+    """Tests for the InD positive-set selection used by the GTU/UU metrics."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.ann_path = os.path.join(self.temp_dir.name, "id_annotations.json")
+        coco = {
+            "images": [{"id": 1, "file_name": "1.jpg", "height": 100, "width": 100}],
+            "categories": [{"id": 7, "name": "car"}, {"id": 9, "name": "person"}],
+            "annotations": [
+                # car at [0, 0, 10, 10], person at [50, 50, 60, 60] (xywh)
+                {"id": 1, "image_id": 1, "category_id": 7, "bbox": [0, 0, 10, 10]},
+                {"id": 2, "image_id": 1, "category_id": 9, "bbox": [50, 50, 10, 10]},
+            ],
+        }
+        with open(self.ann_path, "w") as f:
+            json.dump(coco, f)
+        # Class index 0 = car (category 7), index 1 = person (category 9)
+        self.predictions = {
+            1: {
+                "boxes": torch.tensor(
+                    [
+                        [0.0, 0.0, 10.0, 10.0],  # correct car, high confidence
+                        [0.0, 0.0, 10.0, 10.0],  # duplicate car, lower confidence
+                        [50.0, 50.0, 60.0, 60.0],  # person box labelled as car
+                        [80.0, 80.0, 95.0, 95.0],  # background
+                        [50.0, 50.0, 60.0, 60.0],  # correct person, below min conf
+                    ]
+                ),
+                "logits": torch.tensor(
+                    [[4.0, -4.0], [2.0, -4.0], [3.0, -4.0], [1.0, -4.0], [-4.0, -3.0]]
+                ),
+                "score": [10.0, 20.0, 30.0, 40.0, 50.0],
+            }
+        }
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def _scores(self, positive_set, min_conf_score=None):
+        return get_boxes_id_scores(
+            predictions_dict=self.predictions,
+            method_name="score",
+            id_gt_annotations_path=self.ann_path,
+            positive_set=positive_set,
+            min_conf_score=min_conf_score,
+            use_sigmoid=True,
+        )
+
+    def test_all_returns_every_box(self):
+        np.testing.assert_array_equal(self._scores("all"), [10.0, 20.0, 30.0, 40.0, 50.0])
+
+    def test_localized_ignores_class_and_keeps_duplicates(self):
+        np.testing.assert_array_equal(
+            np.sort(self._scores("localized")), [10.0, 20.0, 30.0, 50.0]
+        )
+
+    def test_true_positive_is_class_aware_and_one_to_one(self):
+        np.testing.assert_array_equal(np.sort(self._scores("true_positive")), [10.0, 50.0])
+
+    def test_min_conf_score_applies_to_id_boxes(self):
+        # sigmoid(-3) ~ 0.047 < 0.05 drops the correct person box
+        np.testing.assert_array_equal(self._scores("true_positive", min_conf_score=0.05), [10.0])
+
+    def test_skips_images_without_method_scores(self):
+        del self.predictions[1]["score"]
+        self.assertEqual(self._scores("all").size, 0)
+
+    def test_invalid_positive_set_raises(self):
+        with self.assertRaises(ValueError):
+            self._scores("tp")
 
 
 if __name__ == "__main__":
