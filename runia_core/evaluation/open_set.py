@@ -302,8 +302,12 @@ class OpenSetEvaluator:
             # The inverse of data loading logic in `datasets/pascal_voc.py`
             xmin += 1
             ymin += 1
+            # The method score is written at full precision (17 significant digits round-trip a
+            # float64): rounding it would create ties for scores packed in a narrow range, such
+            # as MSP near 1, while the InD scores are compared at full precision.
             self._predictions[cls].append(
-                f"{image_id} {s_score:.3f} {xmin:.1f} {ymin:.1f} {xmax:.1f} {ymax:.1f} {m_score:.3f}"
+                f"{image_id} {s_score:.3f} {xmin:.1f} {ymin:.1f} {xmax:.1f} {ymax:.1f} "
+                f"{float(m_score):.17g}"
             )
 
     def evaluate(

@@ -27,6 +27,7 @@ from runia_core.evaluation.open_set import (
     get_gtu_coverage,
     get_boxes_id_scores,
     _max_iou_per_gt,
+    _process_detections,
 )
 
 # Test parameters
@@ -298,6 +299,24 @@ class TestOpenSetEvaluator(TestCase):
         self.assertIn("AP_U", results)
         self.assertIn("P_U", results)
         self.assertIn("R_U", results)
+
+    def test_evaluator_keeps_full_precision_method_scores(self):
+        """Method scores must not be rounded: scores packed near 1 would otherwise tie."""
+        evaluator = OpenSetEvaluator(
+            id_dataset_name="test_dataset",
+            ground_truth_annotations_path=self.coco_path,
+            metric_2007=True,
+        )
+        method_scores = np.array([0.99912345, 0.99987654], dtype=np.float32)
+        evaluator.process(
+            image_id=1,
+            boxes=np.array([[10, 10, 50, 50], [12, 12, 52, 52]]),
+            softmax_scores=np.array([0.95, 0.85]),
+            classes=np.array([0, 0]),
+            method_scores=method_scores,
+        )
+        _, _, _, parsed_scores = _process_detections(evaluator._predictions[0])
+        np.testing.assert_array_equal(np.sort(parsed_scores), np.sort(method_scores.astype(np.float64)))
 
 
 class TestUtilityFunctions(TestCase):
