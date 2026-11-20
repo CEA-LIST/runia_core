@@ -26,6 +26,7 @@ from runia_core.evaluation.open_set import (
     get_overall_open_set_results,
     get_gtu_coverage,
     get_boxes_id_scores,
+    get_boxes_id_positive_masks,
     _max_iou_per_gt,
     _process_detections,
 )
@@ -1328,6 +1329,47 @@ class TestGetBoxesIdScores(TestCase):
     def test_invalid_positive_set_raises(self):
         with self.assertRaises(ValueError):
             self._scores("tp")
+
+    def test_masks_index_boxes_in_original_order(self):
+        masks = get_boxes_id_positive_masks(
+            predictions_dict=self.predictions,
+            id_gt_annotations_path=self.ann_path,
+            positive_set="true_positive",
+            use_sigmoid=True,
+        )
+        np.testing.assert_array_equal(masks[1], [True, False, False, False, True])
+
+    def test_masks_apply_min_conf_and_skip_non_dict_entries(self):
+        self.predictions["no_obj"] = np.array([])
+        masks = get_boxes_id_positive_masks(
+            predictions_dict=self.predictions,
+            id_gt_annotations_path=self.ann_path,
+            positive_set="true_positive",
+            min_conf_score=0.05,
+            use_sigmoid=True,
+        )
+        self.assertEqual(list(masks), [1])
+        np.testing.assert_array_equal(masks[1], [True, False, False, False, False])
+
+    def test_masks_all_needs_no_annotations(self):
+        masks = get_boxes_id_positive_masks(
+            predictions_dict=self.predictions,
+            id_gt_annotations_path=None,
+            positive_set="all",
+            min_conf_score=0.05,
+            use_sigmoid=True,
+        )
+        np.testing.assert_array_equal(masks[1], [True, True, True, True, False])
+
+    def test_images_without_ground_truth_have_no_positives(self):
+        self.predictions[2] = dict(self.predictions[1])
+        masks = get_boxes_id_positive_masks(
+            predictions_dict=self.predictions,
+            id_gt_annotations_path=self.ann_path,
+            positive_set="localized",
+            use_sigmoid=True,
+        )
+        self.assertFalse(masks[2].any())
 
 
 if __name__ == "__main__":
